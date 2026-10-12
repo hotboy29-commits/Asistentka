@@ -354,7 +354,64 @@ def due_reminders(events: list[dict], now: dt.datetime, notified: dict) -> list[
     return msgs
 
 
-def morning_text(now: dt.datetime, events: list[dict], mails: list[dict]) -> str:
+# Plán zakázky (zpětně od deadline = den předání):
+#   montáž       = poslední dny před předáním
+#   výroba       = před montáží
+#   objednat     = před výrobou (včetně objednání a dodání materiálu)
+INSTALL_DAYS = 7
+PRODUCTION_DAYS = 5
+ORDER_LEAD_DAYS = 14
+DONE_STATUSES = {"hotovo", "dokončeno", "dokonceno", "zaplaceno", "uzavřeno", "uzavreno"}
+PLAN_WINDOW_DAYS = 7
+
+
+def _pick(row: dict, pattern: str):
+    for k, v in row.items():
+        if re.search(pattern, k, re.I) and v not in (None, ""):
+            return v
+    return None
+
+
+def zakazka_plan(zakazky: list[dict], today: dt.date) -> list[dict]:
+    out = []
+    for z in zakazky:
+        if str(_pick(z, r"stav") or "").strip().lower() in DONE_STATUSES:
+            continue
+        raw = _pick(z, r"deadline")
+        if not raw:
+            continue
+        try:
+            deadline = dt.date.fromisoformat(str(raw)[:10])
+        except ValueError:
+            continue
+        install_start = deadline - dt.timedelta(days=INSTALL_DAYS)
+        prod_start = install_start - dt.timedelta(days=PRODUCTION_DAYS)
+        order_by = prod_start - dt.timedelta(days=ORDER_LEAD_DAYS)
+        name = str(_pick(z, r"naz") or "(bez názvu)")
+        client = str(_pick(z, r"zakazn") or "")
+        steps = [
+            ("Objednat materiál", order_by),
+            ("Začít výrobu", prod_start),
+            ("Začít montáž", install_start),
+            ("Předání zákazníkovi", deadline),
+        ]
+        for label, when in steps:
+            days = (when - today).days
+            if -30 <= days <= PLAN_WINDOW_DAYS:
+                out.append({"zakazka": name, "klient": client, "akce": label,
+                            "datum": when.isoformat(), "dny": days})
+    out.sort(key=lambda x: x["datum"])
+    return out
+
+
+def plan_line(item: dict) -> str:
+    d = item["dny"]
+    when = "dnes" if d == 0 else ("zítra" if d == 1 else (f"za {d} dní" if d > 0 else f"PO TERMÍNU ({-d} dní)"))
+    who = f" – {item['klient']}" if item["klient"] and item["klient"] not in item["zakazka"] else ""
+    return f"• {item['akce']}: {item['zakazka']}{who} ({when})"
+
+
+def morning_text(now: dt.datetime, events: list[dict], mails: list[dict], plan: list[dict] | None = None) -> str:
     today = [e for e in events if parse_iso(e["start"]).date() == now.date()]
     lines = [f"Dobré ráno! Dnes máš {len(today)} událost(í)."]
     for e in today:
@@ -373,6 +430,9 @@ def morning_text(now: dt.datetime, events: list[dict], mails: list[dict]) -> str
         lines.append("\nŽádné důležité e-maily přes noc.")
     spam = sum(1 for m in night if m.get("category") == "reklama")
     lines.append(f"Reklamní / nedůležité e-maily přeskočeny: {spam}.")
+    if plan:
+        lines.append(f"\nZakázky – co je potřeba (příštích {PLAN_WINDOW_DAYS} dní):")
+        lines.extend(plan_line(p) for p in plan)
     return "\n".join(lines)
 
 
@@ -478,7 +538,7 @@ def main() -> int:
     # --- ranní souhrn (jednou denně, mezi 7:00 a 11:00)
     today = now.date().isoformat()
     if MORNING_FROM_HOUR <= now.hour < MORNING_TO_HOUR and state.get("last_morning") != today:
-        text = morning_text(now, events, mails)
+        text = morning_text(now, events, mails, zakazka_plan(zakazky, now.date()))
         send_push("Ranní souhrn", text, priority=3)
         state["last_morning"] = today
         state["last_morning_text"] = text
@@ -489,6 +549,7 @@ def main() -> int:
         "events": events,
         "emails": mails,
         "zakazky": zakazky,
+        "zakazky_plan": zakazka_plan(zakazky, now.date()),
         "reklama_count": sum(1 for m in mails if m.get("category") == "reklama"),
         "morning_text": state.get("last_morning_text", ""),
         "errors": errors,

@@ -112,7 +112,9 @@
         <div id="events"></div>
       </div>
       <div class="card">
-        <h2>Zakázky (z databáze)</h2>
+        <h2>Zakázky – co je potřeba</h2>
+        <div id="planDb"></div>
+        <h2 style="margin-top:14px">Všechny zakázky</h2>
         <div id="zakazkyDb"></div>
       </div>
       <div class="card">
@@ -302,9 +304,17 @@ function renderData() {
       <div class="muted">${esc(day)}${e.location ? " · " + esc(e.location) : ""}</div></div></div>`;
   }).join("") : `<p class="muted">Žádné události v následujících 48 hodinách.</p>`;
 
+  const plan = DATA.zakazky_plan || [];
+  $("planDb").innerHTML = plan.length ? plan.map(p => {
+    const when = p.dny === 0 ? "dnes" : p.dny === 1 ? "zítra" : p.dny > 0 ? "za " + p.dny + " dní" : `<strong style="color:var(--bad)">po termínu (${-p.dny} dní)</strong>`;
+    return `<div class="row"><div class="time">${esc(new Date(p.datum).toLocaleDateString("cs-CZ", { day: "numeric", month: "numeric" }))}</div>
+      <div class="grow"><strong>${esc(p.akce)}</strong><div>${esc(p.zakazka)}${p.klient && !p.zakazka.includes(p.klient) ? " – " + esc(p.klient) : ""}</div>
+      <div class="muted">${when}</div></div></div>`;
+  }).join("") : `<p class="muted">Na příštích 7 dní nic nevyžaduje akci.</p>`;
+
   const zk = DATA.zakazky || [];
   $("zakazkyDb").innerHTML = zk.length ? zk.map(z => `<div class="row"><div class="grow">${
-    Object.entries(z).slice(0, 8).map(([k, v]) => `<div><span class="muted">${esc(k)}:</span> ${esc(typeof v === "object" ? JSON.stringify(v) : v)}</div>`).join("")
+    Object.entries(z).filter(([k, v]) => !/(^id$|_id$|uuid)/i.test(k) && v !== null && v !== "").slice(0, 10).map(([k, v]) => `<div><span class="muted">${esc(k)}:</span> ${esc(typeof v === "object" ? JSON.stringify(v) : v)}</div>`).join("")
   }</div></div>`).join("") : `<p class="muted">Žádné zakázky v databázi, nebo se nepodařilo načíst.</p>`;
 
   const imp = (DATA.emails || []).filter(m => m.category === "dulezite");
