@@ -58,6 +58,13 @@
   .check { display:flex; align-items:center; gap:8px; margin-top:8px; color:var(--mute); font-size:14px; }
   .check input { width:auto; }
   .done { text-decoration: line-through; color: var(--mute); }
+  .chatlog { display:flex; flex-direction:column; gap:8px; max-height:50vh; overflow-y:auto; margin:10px 0; }
+  .msg { padding:10px 12px; border-radius:14px; max-width:88%; white-space:pre-wrap; font-size:15px; }
+  .msg.user { align-self:flex-end; background:var(--accent); color:#fff; }
+  .msg.bot { align-self:flex-start; background:var(--bg); border:1px solid var(--line); }
+  .chatform { display:flex; gap:8px; }
+  .chatform input { flex:1; }
+  .chatform button { flex:0 0 auto; }
   #print-area { display:none; }
   @media print {
     body * { visibility:hidden; }
@@ -177,6 +184,35 @@
 
       <div class="card"><h2>Uložené nabídky</h2><div id="quotes"></div></div>
     </section>
+
+    <!-- ASISTENT -->
+    <section id="tab-asistent" class="tab" hidden>
+      <div class="card">
+        <h2>Asistentka</h2>
+        <p class="muted">Ptej se na dnešek, e-maily, zakázky nebo nabídky. Vidí jen data z této aplikace.</p>
+        <div class="chips">
+          <button class="chip quick" data-q="Co mám dnes a zítra za schůzky a úkoly?">Dnes a zítra</button>
+          <button class="chip quick" data-q="Projdi důležité e-maily a navrhni, na co odpovědět jako první a jak.">Důležité e-maily</button>
+          <button class="chip quick" data-q="Připrav návrh cenové nabídky z poslední poptávky v e-mailech. Položky vypiš v tabulce.">Návrh nabídky</button>
+          <button class="chip quick" data-q="Podívej se na zakázky a napiš, co musím objednat a kdy.">Co objednat</button>
+        </div>
+        <div id="chatLog" class="chatlog"></div>
+        <form id="chatForm" class="chatform">
+          <input id="chatInput" placeholder="Napiš zprávu…" autocomplete="off">
+          <button id="chatSend" type="submit">Odeslat</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Nastavení AI</h2>
+        <p class="muted" id="keyState">Klíč Gemini zatím není uložen.</p>
+        <label for="gKey">Klíč Gemini (uloží se jen do tohoto zařízení)</label>
+        <input id="gKey" type="password" autocomplete="off">
+        <div class="actions">
+          <button id="saveKey" class="ghost">Uložit klíč</button>
+          <button id="forgetKey" class="danger">Smazat klíč</button>
+        </div>
+      </div>
+    </section>
   </main>
 
   <nav class="tabs">
@@ -184,6 +220,7 @@
     <button data-tab="posta"><span class="ico">✉︎</span>Pošta</button>
     <button data-tab="zakazky"><span class="ico">🔨</span>Zakázky</button>
     <button data-tab="nabidky"><span class="ico">Kč</span>Nabídky</button>
+    <button data-tab="asistent"><span class="ico">✨</span>Asistent</button>
   </nav>
 </div>
 
@@ -540,6 +577,84 @@ function quoteFromProject(p) {
 }
 
 function renderAll() { renderProjects(); renderQuotes(); fillSettings(); clearQuote(); }
+
+/* ---------- ASISTENT (AI chat přímo z tvého zařízení) ---------- */
+const SYSTEM_PROMPT = `Jsi osobní asistentka a sekretářka podnikatele (řemeslo, stavby, montáže). Odpovídej česky, stručně a prakticky.
+Máš přístup k údajům v části KONTEXT (kalendář, e-maily, zakázky, nabídky). Nic za něj neodesíláš, do kalendáře nic nezapisuješ a nic nevyřizuješ. Jen navrhuješ texty a plány.
+Když navrhuješ nabídku, vypiš položky v tabulce: Položka | Množství | Jednotka | Cena/jedn. bez DPH. Když cenu neznáš, napiš to a neodhaduj ji.
+Když navrhuješ objednávku materiálu, vypiš seznam s množstvím.`;
+let chatHistory = [];
+
+function buildContext() {
+  const now = new Date();
+  const ev = (DATA?.events || []).map(e => `- ${new Date(e.start).toLocaleString("cs-CZ")}: ${e.title}${e.location ? " (" + e.location + ")" : ""}`).join("\n") || "(žádné)";
+  const mails = (DATA?.emails || []).slice(0, 20).map(m => `- [${CAT[m.category] || m.category}] ${m.from}: ${m.subject}${m.summary ? " – " + m.summary : ""}`).join("\n") || "(žádné)";
+  const proj = projects.map(p => `- ${p.name} (klient: ${p.client || "-"}, termín: ${p.deadline || "-"}); materiál: ${p.items.map(i => `${i.name} ${i.qty} ${i.unit}${i.ordered ? " [objednáno]" : ""}`).join(", ") || "žádný"}`).join("\n") || "(žádné)";
+  const qs = quotes.slice(0, 10).map(q => `- ${q.no} pro ${q.client}: ${q.title}, celkem ${money(totals(q.items).total)} vč. DPH`).join("\n") || "(žádné)";
+  return `Teď je ${now.toLocaleString("cs-CZ")}.\n\nUdálosti (48 h):\n${ev}\n\nE-maily (24 h):\n${mails}\n\nZakázky:\n${proj}\n\nNabídky:\n${qs}\n\nFirma: ${settings.firma || "-"}, IČO ${settings.ico || "-"}, DPH ${settings.dph} %.`;
+}
+
+function addMsg(role, text) {
+  const div = document.createElement("div");
+  div.className = "msg " + role;
+  div.textContent = text;
+  $("chatLog").appendChild(div);
+  $("chatLog").scrollTop = $("chatLog").scrollHeight;
+  return div;
+}
+
+async function askAssistant(text) {
+  const key = localStorage.getItem("asist_gemini");
+  if (!key) { addMsg("bot", "Nejdřív ulož klíč Gemini v nastavení dole."); return; }
+  addMsg("user", text);
+  chatHistory.push({ role: "user", parts: [{ text }] });
+  const pending = addMsg("bot", "Přemýšlím…");
+  $("chatSend").disabled = true;
+  try {
+    const model = localStorage.getItem("asist_model") || "gemini-2.5-flash";
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: SYSTEM_PROMPT + "\n\nKONTEXT:\n" + buildContext() }] },
+        contents: chatHistory.slice(-12),
+        generationConfig: { temperature: 0.4 },
+      }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error?.message || ("HTTP " + r.status));
+    const answer = (j.candidates?.[0]?.content?.parts || []).map(p => p.text || "").join("").trim()
+      || "Nemám odpověď, zkus to přeformulovat.";
+    chatHistory.push({ role: "model", parts: [{ text: answer }] });
+    pending.textContent = answer;
+  } catch (e) {
+    chatHistory.pop();
+    pending.textContent = "Chyba: " + e.message;
+  } finally {
+    $("chatSend").disabled = false;
+  }
+}
+
+$("chatForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const t = $("chatInput").value.trim();
+  if (!t) return;
+  $("chatInput").value = "";
+  askAssistant(t);
+});
+document.querySelectorAll(".quick").forEach(b => b.addEventListener("click", () => askAssistant(b.dataset.q)));
+$("saveKey").addEventListener("click", () => {
+  const k = $("gKey").value.trim();
+  if (!k) return;
+  localStorage.setItem("asist_gemini", k);
+  $("gKey").value = "";
+  $("keyState").textContent = "Klíč je uložen v tomto zařízení ✓";
+});
+$("forgetKey").addEventListener("click", () => {
+  localStorage.removeItem("asist_gemini");
+  $("keyState").textContent = "Klíč byl smazán.";
+});
+if (localStorage.getItem("asist_gemini")) $("keyState").textContent = "Klíč je uložen v tomto zařízení ✓";
 
 /* ---------- start ---------- */
 (async function init() {

@@ -1,5 +1,5 @@
 // Offline cache: aplikace se otevře i bez signálu. Data se berou z sítě, když je to možné.
-const CACHE = "asistentka-v1";
+const CACHE = "asistentka-v2";
 const SHELL = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
 
 self.addEventListener("install", (e) => {
