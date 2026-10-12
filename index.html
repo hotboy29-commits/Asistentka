@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Asistentka">
+<meta name="theme-color" content="#1f3a5f">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>Asistentka</title>
+<style>
+  :root { --bg:#f4f6f9; --card:#fff; --ink:#1c2430; --mute:#6b7685; --accent:#1f3a5f; --ok:#2e7d4f; --warn:#b26a00; --bad:#b3261e; --line:#e2e6ec; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#121820; --card:#1c2530; --ink:#e8edf3; --mute:#9aa6b5; --accent:#7fb0e6; --line:#2c3846; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--ink); font:16px/1.4 -apple-system, system-ui, "SF Pro Text", sans-serif; -webkit-font-smoothing: antialiased; }
+  body { padding: env(safe-area-inset-top) 0 0; }
+  [hidden] { display:none !important; }
+  header.top { position:sticky; top:0; z-index:5; display:flex; align-items:center; justify-content:space-between; padding:14px 18px; background:var(--card); border-bottom:1px solid var(--line); }
+  header.top h1 { font-size:20px; margin:0; }
+  header.top small { color:var(--mute); display:block; font-size:12px; }
+  main { padding: 14px 14px 110px; max-width: 900px; margin: 0 auto; }
+  nav.tabs { position:fixed; bottom:0; left:0; right:0; display:flex; background:var(--card); border-top:1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); z-index:5; }
+  nav.tabs button { flex:1; padding:10px 4px 12px; background:none; border:0; color:var(--mute); font-size:12px; }
+  nav.tabs button .ico { display:block; font-size:22px; margin-bottom:2px; }
+  nav.tabs button.on { color:var(--accent); font-weight:600; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; margin-bottom:12px; }
+  .card h2 { font-size:16px; margin:0 0 8px; }
+  .muted { color:var(--mute); font-size:14px; }
+  .row { display:flex; gap:10px; align-items:flex-start; padding:8px 0; border-top:1px solid var(--line); }
+  .row:first-child { border-top:0; }
+  .time { min-width:52px; font-variant-numeric: tabular-nums; color:var(--accent); font-weight:600; font-size:14px; }
+  .grow { flex:1; min-width:0; }
+  .tag { display:inline-block; font-size:11px; padding:2px 8px; border-radius:999px; margin-left:6px; vertical-align:1px; font-weight:600; }
+  .t-dulezite { background:#fde7e4; color:var(--bad); }
+  .t-k_precteni { background:#e6f0fb; color:var(--accent); }
+  .t-reklama { background:#eef0f3; color:var(--mute); }
+  button, .btn { font:inherit; border:0; border-radius:10px; padding:10px 14px; background:var(--accent); color:#fff; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--accent); border:1px solid var(--line); }
+  button.danger { background:transparent; color:var(--bad); border:1px solid var(--line); }
+  button.small { padding:6px 10px; font-size:14px; }
+  input, textarea, select { font:inherit; width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); }
+  textarea { min-height: 70px; }
+  label { font-size:13px; color:var(--mute); display:block; margin:8px 0 4px; }
+  .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
+  .grid4 { display:grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap:6px; }
+  .actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+  .chip { padding:6px 12px; border-radius:999px; background:var(--card); border:1px solid var(--line); color:var(--ink); font-size:14px; }
+  .chip.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .err { background:#fde7e4; color:var(--bad); padding:10px 12px; border-radius:10px; margin-bottom:10px; font-size:14px; }
+  pre.morning { white-space:pre-wrap; font:inherit; margin:0; }
+  .lock { min-height:100%; display:flex; align-items:center; justify-content:center; padding:24px; }
+  .lock .card { width:100%; max-width:380px; }
+  .check { display:flex; align-items:center; gap:8px; margin-top:8px; color:var(--mute); font-size:14px; }
+  .check input { width:auto; }
+  .done { text-decoration: line-through; color: var(--mute); }
+  #print-area { display:none; }
+  @media print {
+    body * { visibility:hidden; }
+    body { background:#fff; }
+    #print-area, #print-area * { visibility:visible; color:#000; }
+    #print-area { display:block; position:absolute; left:0; top:0; width:100%; padding:18mm; font-size:11pt; }
+    #print-area table { width:100%; border-collapse:collapse; margin:10px 0; }
+    #print-area th, #print-area td { border-bottom:1px solid #999; padding:6px 4px; text-align:left; }
+    #print-area .r { text-align:right; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ZAMYKACÍ OBRAZOVKA -->
+<div id="lock" class="lock">
+  <div class="card">
+    <h2>Asistentka</h2>
+    <p class="muted">Zadej heslo pro šifrování dat. Data se dešifrují jen v tomto zařízení.</p>
+    <label for="pass">Heslo</label>
+    <input id="pass" type="password" autocomplete="current-password">
+    <label class="check"><input id="remember" type="checkbox" checked> Pamatovat na tomto zařízení</label>
+    <div class="actions"><button id="unlock">Otevřít</button></div>
+    <p id="lockErr" class="muted" style="color:var(--bad)" hidden>Heslo nesedí nebo se data nepodařilo načíst.</p>
+  </div>
+</div>
+
+<!-- APLIKACE -->
+<div id="app" hidden>
+  <header class="top">
+    <div><h1>Asistentka</h1><small id="updated">Načítám…</small></div>
+    <button id="refresh" class="ghost small">↻ Aktualizovat</button>
+  </header>
+
+  <main>
+    <!-- DNES -->
+    <section id="tab-dnes" class="tab">
+      <div id="errors"></div>
+      <div class="card">
+        <h2>Ranní souhrn</h2>
+        <pre class="morning" id="morning">Zatím žádný souhrn.</pre>
+      </div>
+      <div class="card">
+        <h2>Nadcházející události (48 h)</h2>
+        <div id="events"></div>
+      </div>
+      <div class="card">
+        <h2>Důležité e-maily</h2>
+        <div id="importantMails"></div>
+      </div>
+    </section>
+
+    <!-- POŠTA -->
+    <section id="tab-posta" class="tab" hidden>
+      <div class="chips" id="mailFilter">
+        <button class="chip on" data-f="all">Vše</button>
+        <button class="chip" data-f="dulezite">Důležité</button>
+        <button class="chip" data-f="k_precteni">K přečtení</button>
+        <button class="chip" data-f="reklama">Reklama</button>
+      </div>
+      <div class="card"><div id="mails"></div></div>
+    </section>
+
+    <!-- ZAKÁZKY -->
+    <section id="tab-zakazky" class="tab" hidden>
+      <div class="card">
+        <h2>Nová zakázka</h2>
+        <label>Název zakázky</label><input id="pName" placeholder="např. Koupelna – Novák">
+        <div class="grid2">
+          <div><label>Klient</label><input id="pClient"></div>
+          <div><label>Termín</label><input id="pDeadline" type="date"></div>
+        </div>
+        <label>Poznámka</label><textarea id="pNote"></textarea>
+        <div class="actions"><button id="addProject">Přidat zakázku</button></div>
+      </div>
+      <div id="projects"></div>
+    </section>
+
+    <!-- NABÍDKY -->
+    <section id="tab-nabidky" class="tab" hidden>
+      <div class="card">
+        <h2>Údaje o firmě (pro nabídky)</h2>
+        <div class="grid2">
+          <div><label>Firma / jméno</label><input id="sFirma"></div>
+          <div><label>IČO</label><input id="sIco"></div>
+          <div><label>DIČ (prázdné = neplátce DPH)</label><input id="sDic"></div>
+          <div><label>Sazba DPH (%)</label><input id="sDph" type="number" value="21"></div>
+        </div>
+        <label>Adresa</label><input id="sAdresa">
+        <label>Číslo účtu</label><input id="sUcet">
+        <div class="actions"><button id="saveSettings" class="ghost">Uložit údaje</button></div>
+      </div>
+
+      <div class="card">
+        <h2 id="qTitle">Nová cenová nabídka</h2>
+        <input type="hidden" id="qEditId">
+        <div class="grid2">
+          <div><label>Klient</label><input id="qClient"></div>
+          <div><label>Adresa klienta</label><input id="qClientAddr"></div>
+        </div>
+        <label>Předmět nabídky</label><input id="qTitleInput" placeholder="např. Rekonstrukce koupelny">
+        <div class="grid2">
+          <div><label>Platnost (dní)</label><input id="qValid" type="number" value="30"></div>
+          <div><label>Datum</label><input id="qDate" type="date"></div>
+        </div>
+        <label>Položky</label>
+        <div id="qItems"></div>
+        <div class="actions"><button id="addItem" class="ghost small">+ Položka</button></div>
+        <label>Poznámka / podmínky</label><textarea id="qNote" placeholder="např. Cena bez materiálu, platba 50 % předem…"></textarea>
+        <div id="qTotals" class="muted" style="margin-top:10px"></div>
+        <div class="actions">
+          <button id="saveQuote">Uložit nabídku</button>
+          <button id="printQuote" class="ghost">Tisk / PDF</button>
+          <button id="clearQuote" class="ghost">Nová</button>
+        </div>
+      </div>
+
+      <div class="card"><h2>Uložené nabídky</h2><div id="quotes"></div></div>
+    </section>
+  </main>
+
+  <nav class="tabs">
+    <button data-tab="dnes" class="on"><span class="ico">☀︎</span>Dnes</button>
+    <button data-tab="posta"><span class="ico">✉︎</span>Pošta</button>
+    <button data-tab="zakazky"><span class="ico">🔨</span>Zakázky</button>
+    <button data-tab="nabidky"><span class="ico">Kč</span>Nabídky</button>
+  </nav>
+</div>
+
+<div id="print-area"></div>
+
+<script>
+/* ---------- pomocné ---------- */
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const money = (n) => new Intl.NumberFormat("cs-CZ", { style: "currency", currency: "CZK", maximumFractionDigits: 0 }).format(n || 0);
+const dayName = (d) => d.toLocaleDateString("cs-CZ", { weekday: "long", day: "numeric", month: "numeric" });
+const hm = (d) => d.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" });
+const load = (k, def) => { try { return JSON.parse(localStorage.getItem(k)) ?? def; } catch { return def; } };
+const store = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+const CAT = { dulezite: "Důležité", k_precteni: "K přečtení", reklama: "Reklama" };
+
+/* ---------- dešifrování (AES-GCM + PBKDF2, stejné jako v Pythonu) ---------- */
+const b64 = (s) => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+async function decryptBlob(blob, pass) {
+  const km = await crypto.subtle.importKey("raw", new TextEncoder().encode(pass), "PBKDF2", false, ["deriveKey"]);
+  const key = await crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt: b64(blob.salt), iterations: 200000, hash: "SHA-256" },
+    km, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(blob.iv) }, key, b64(blob.ct));
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+
+let DATA = null;
+let PASS = null;
+
+/* Stáhne zašifrovaná data; když není signál, použije poslední uloženou kopii. */
+async function fetchData() {
+  try {
+    const r = await fetch("data.enc.json?t=" + Date.now(), { cache: "no-store" });
+    if (!r.ok) throw new Error("data");
+    const blob = await r.json();
+    localStorage.setItem("asist_blob", JSON.stringify(blob));
+    return blob;
+  } catch (e) {
+    const cached = localStorage.getItem("asist_blob");
+    if (cached) return JSON.parse(cached);
+    throw e;
+  }
+}
+
+async function refreshData() {
+  try {
+    const blob = await fetchData();
+    DATA = await decryptBlob(blob, PASS);
+    renderData();
+  } catch (e) {
+    if (!DATA) { $("updated").textContent = "Nepodařilo se načíst data"; }
+    else { $("updated").textContent = "Offline – poslední data"; }
+  }
+}
+
+/* ---------- zobrazení dat ---------- */
+function renderData() {
+  const upd = new Date(DATA.updated);
+  $("updated").textContent = "Aktualizováno " + dayName(upd) + " " + hm(upd);
+  $("errors").innerHTML = (DATA.errors || []).map(e => `<div class="err">${esc(e)}</div>`).join("");
+  $("morning").textContent = DATA.morning_text || "Zatím žádný souhrn – přijde v 7:00.";
+
+  const now = new Date();
+  const ev = (DATA.events || []).slice().sort((a, b) => a.start.localeCompare(b.start));
+  $("events").innerHTML = ev.length ? ev.map(e => {
+    const s = new Date(e.start);
+    const when = e.allDay ? "celý den" : hm(s);
+    const day = s.toDateString() === now.toDateString() ? "Dnes" : dayName(s);
+    return `<div class="row"><div class="time">${esc(when)}</div><div class="grow">
+      <div><strong>${esc(e.title)}</strong></div>
+      <div class="muted">${esc(day)}${e.location ? " · " + esc(e.location) : ""}</div></div></div>`;
+  }).join("") : `<p class="muted">Žádné události v následujících 48 hodinách.</p>`;
+
+  const imp = (DATA.emails || []).filter(m => m.category === "dulezite");
+  $("importantMails").innerHTML = imp.length ? imp.map(mailRow).join("") :
+    `<p class="muted">Žádné důležité e-maily.</p>`;
+  if (DATA.reklama_count) $("importantMails").insertAdjacentHTML("beforeend",
+    `<p class="muted">Přeskočeno reklamních e-mailů: ${DATA.reklama_count}</p>`);
+
+  renderMails();
+}
+
+function mailRow(m) {
+  const d = new Date(m.date);
+  return `<div class="row"><div class="grow">
+    <div><strong>${esc(m.from)}</strong><span class="tag t-${m.category}">${CAT[m.category] || ""}</span></div>
+    <div>${esc(m.subject)}</div>
+    ${m.summary ? `<div class="muted">${esc(m.summary)}</div>` : ""}
+    <div class="muted" style="font-size:12px">${dayName(d)} ${hm(d)}</div></div></div>`;
+}
+
+let mailFilter = "all";
+function renderMails() {
+  const list = (DATA.emails || []).filter(m => mailFilter === "all" || m.category === mailFilter);
+  $("mails").innerHTML = list.length ? list.map(mailRow).join("") : `<p class="muted">Nic v tomto filtru.</p>`;
+}
+$("mailFilter").addEventListener("click", (e) => {
+  const b = e.target.closest(".chip"); if (!b) return;
+  mailFilter = b.dataset.f;
+  document.querySelectorAll("#mailFilter .chip").forEach(c => c.classList.toggle("on", c === b));
+  renderMails();
+});
+
+/* ---------- navigace ---------- */
+function show(which) {
+  $("lock").hidden = which !== "lock";
+  $("app").hidden = which !== "app";
+}
+document.querySelectorAll("nav.tabs button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("nav.tabs button").forEach(x => x.classList.toggle("on", x === b));
+  document.querySelectorAll(".tab").forEach(t => t.hidden = t.id !== "tab-" + b.dataset.tab);
+  window.scrollTo(0, 0);
+}));
+
+/* ---------- zámek ---------- */
+async function unlock(pass) {
+  PASS = pass;
+  try {
+    DATA = await decryptBlob(await fetchData(), pass);
+    if ($("remember").checked) localStorage.setItem("asist_pass", pass);
+    show("app"); renderData(); renderAll();
+  } catch (e) {
+    PASS = null; $("lockErr").hidden = false;
+  }
+}
+$("unlock").addEventListener("click", () => unlock($("pass").value));
+$("pass").addEventListener("keydown", (e) => { if (e.key === "Enter") $("unlock").click(); });
+$("refresh").addEventListener("click", refreshData);
+
+/* ---------- ZAKÁZKY (ukládá se v tomto zařízení) ---------- */
+let projects = load("asist_projects", []);
+const saveProjects = () => store("asist_projects", projects);
+
+$("addProject").addEventListener("click", () => {
+  const name = $("pName").value.trim();
+  if (!name) return;
+  projects.unshift({ id: uid(), name, client: $("pClient").value.trim(), deadline: $("pDeadline").value,
+    note: $("pNote").value.trim(), items: [] });
+  saveProjects();
+  ["pName", "pClient", "pDeadline", "pNote"].forEach(id => $(id).value = "");
+  renderProjects();
+});
+
+function renderProjects() {
+  $("projects").innerHTML = projects.length ? projects.map(p => {
+    const open = p.items.filter(i => !i.ordered).length;
+    const items = p.items.map(i => `<div class="row">
+        <input type="checkbox" data-act="ord" data-p="${p.id}" data-i="${i.id}" ${i.ordered ? "checked" : ""} style="width:auto;margin-top:4px">
+        <div class="grow ${i.ordered ? "done" : ""}"><strong>${esc(i.name)}</strong> · ${esc(i.qty)} ${esc(i.unit)}
+          ${i.price ? `<span class="muted">· ${money(i.price)}</span>` : ""}</div>
+        <button class="danger small" data-act="delItem" data-p="${p.id}" data-i="${i.id}">×</button></div>`).join("");
+    return `<div class="card">
+      <div style="display:flex;justify-content:space-between;gap:8px">
+        <div><h2>${esc(p.name)}</h2>
+          <div class="muted">${esc(p.client)}${p.deadline ? " · termín " + esc(new Date(p.deadline).toLocaleDateString("cs-CZ")) : ""}</div></div>
+        <button class="danger small" data-act="delProject" data-p="${p.id}">Smazat</button>
+      </div>
+      ${p.note ? `<p class="muted">${esc(p.note)}</p>` : ""}
+      <h3 style="font-size:14px;margin:12px 0 4px">Materiál a objednávky ${open ? `<span class="muted">(k objednání: ${open})</span>` : ""}</h3>
+      ${items || `<p class="muted">Zatím žádné položky.</p>`}
+      <div class="grid4" style="margin-top:10px">
+        <input placeholder="Co objednat" data-new="name-${p.id}">
+        <input placeholder="Počet" data-new="qty-${p.id}">
+        <input placeholder="Jednotka" data-new="unit-${p.id}">
+        <input placeholder="Cena" type="number" data-new="price-${p.id}">
+      </div>
+      <div class="actions"><button class="small" data-act="addItem" data-p="${p.id}">+ Přidat položku</button>
+        <button class="ghost small" data-act="copy" data-p="${p.id}">Kopírovat seznam</button>
+        <button class="ghost small" data-act="toQuote" data-p="${p.id}">Vytvořit nabídku</button></div>
+    </div>`;
+  }).join("") : `<p class="muted">Zatím žádné zakázky.</p>`;
+}
+
+$("projects").addEventListener("click", async (e) => {
+  const el = e.target.closest("[data-act]"); if (!el) return;
+  const p = projects.find(x => x.id === el.dataset.p);
+  const act = el.dataset.act;
+  if (act === "delProject") { if (confirm("Smazat zakázku?")) projects = projects.filter(x => x !== p); }
+  if (act === "addItem") {
+    const get = (k) => $("projects").querySelector(`[data-new="${k}-${p.id}"]`).value.trim();
+    if (!get("name")) return;
+    p.items.push({ id: uid(), name: get("name"), qty: get("qty") || "1", unit: get("unit") || "ks",
+      price: Number(get("price")) || 0, ordered: false });
+  }
+  if (act === "delItem") p.items = p.items.filter(i => i.id !== el.dataset.i);
+  if (act === "copy") {
+    const text = `Objednávka – ${p.name}\n` + p.items.filter(i => !i.ordered)
+      .map(i => `- ${i.name}: ${i.qty} ${i.unit}`).join("\n");
+    try { await navigator.clipboard.writeText(text); el.textContent = "Zkopírováno ✓"; } catch { alert(text); }
+    return;
+  }
+  if (act === "toQuote") {
+    quoteFromProject(p);
+    document.querySelector('nav.tabs button[data-tab="nabidky"]').click();
+    return;
+  }
+  saveProjects(); renderProjects();
+});
+$("projects").addEventListener("change", (e) => {
+  if (e.target.dataset.act !== "ord") return;
+  const p = projects.find(x => x.id === e.target.dataset.p);
+  const i = p.items.find(x => x.id === e.target.dataset.i);
+  i.ordered = e.target.checked; saveProjects(); renderProjects();
+});
+
+/* ---------- NABÍDKY ---------- */
+let settings = load("asist_settings", { firma: "", ico: "", dic: "", adresa: "", ucet: "", dph: 21 });
+let quotes = load("asist_quotes", []);
+const saveQuotes = () => store("asist_quotes", quotes);
+
+function fillSettings() {
+  $("sFirma").value = settings.firma; $("sIco").value = settings.ico; $("sDic").value = settings.dic;
+  $("sAdresa").value = settings.adresa; $("sUcet").value = settings.ucet; $("sDph").value = settings.dph;
+}
+$("saveSettings").addEventListener("click", () => {
+  settings = { firma: $("sFirma").value, ico: $("sIco").value, dic: $("sDic").value,
+    adresa: $("sAdresa").value, ucet: $("sUcet").value, dph: Number($("sDph").value) || 0 };
+  store("asist_settings", settings);
+  $("saveSettings").textContent = "Uloženo ✓";
+  setTimeout(() => $("saveSettings").textContent = "Uložit údaje", 1500);
+  updateTotals();
+});
+
+let draft = { items: [] };
+function addItemRow(it = { name: "", qty: 1, unit: "hod", price: 0 }) {
+  const div = document.createElement("div");
+  div.className = "grid4 item-row"; div.style.marginBottom = "6px";
+  div.innerHTML = `<input placeholder="Popis" value="${esc(it.name)}" data-f="name">
+    <input type="number" placeholder="Množ." value="${esc(it.qty)}" data-f="qty">
+    <input placeholder="Jedn." value="${esc(it.unit)}" data-f="unit">
+    <input type="number" placeholder="Cena/jedn." value="${esc(it.price)}" data-f="price">`;
+  div.addEventListener("input", updateTotals);
+  $("qItems").appendChild(div);
+}
+function readItems() {
+  return [...document.querySelectorAll(".item-row")].map(r => ({
+    name: r.querySelector('[data-f="name"]').value,
+    qty: Number(r.querySelector('[data-f="qty"]').value) || 0,
+    unit: r.querySelector('[data-f="unit"]').value,
+    price: Number(r.querySelector('[data-f="price"]').value) || 0,
+  })).filter(i => i.name);
+}
+function totals(items) {
+  const base = items.reduce((s, i) => s + i.qty * i.price, 0);
+  const vat = settings.dph ? base * settings.dph / 100 : 0;
+  return { base, vat, total: base + vat };
+}
+function updateTotals() {
+  const t = totals(readItems());
+  $("qTotals").innerHTML = `Celkem bez DPH: <strong>${money(t.base)}</strong> · DPH: ${money(t.vat)} · Celkem: <strong>${money(t.total)}</strong>`;
+}
+function nextQuoteNo() {
+  const year = new Date().getFullYear();
+  const n = quotes.filter(q => q.no.startsWith(year + "-")).length + 1;
+  return `${year}-${String(n).padStart(3, "0")}`;
+}
+function clearQuote() {
+  $("qEditId").value = ""; $("qClient").value = ""; $("qClientAddr").value = "";
+  $("qTitleInput").value = ""; $("qValid").value = 30; $("qDate").value = new Date().toISOString().slice(0, 10);
+  $("qNote").value = ""; $("qItems").innerHTML = ""; addItemRow(); updateTotals();
+  $("qTitle").textContent = "Nová cenová nabídka";
+}
+$("clearQuote").addEventListener("click", clearQuote);
+$("addItem").addEventListener("click", () => addItemRow());
+
+$("saveQuote").addEventListener("click", () => {
+  const items = readItems();
+  if (!$("qClient").value.trim() || !items.length) { alert("Vyplň klienta a aspoň jednu položku."); return; }
+  const q = {
+    id: $("qEditId").value || uid(),
+    no: null,
+    date: $("qDate").value || new Date().toISOString().slice(0, 10),
+    valid: Number($("qValid").value) || 30,
+    client: $("qClient").value.trim(), clientAddr: $("qClientAddr").value.trim(),
+    title: $("qTitleInput").value.trim(), note: $("qNote").value.trim(), items,
+  };
+  const existing = quotes.find(x => x.id === q.id);
+  q.no = existing ? existing.no : nextQuoteNo();
+  if (existing) quotes = quotes.map(x => x.id === q.id ? q : x); else quotes.unshift(q);
+  saveQuotes(); renderQuotes();
+  $("qEditId").value = q.id; $("qTitle").textContent = "Nabídka " + q.no + " (uloženo)";
+});
+
+$("printQuote").addEventListener("click", () => {
+  const items = readItems();
+  if (!items.length) { alert("Přidej položky."); return; }
+  printQuote({
+    no: $("qEditId").value ? (quotes.find(x => x.id === $("qEditId").value)?.no || nextQuoteNo()) : nextQuoteNo(),
+    date: $("qDate").value || new Date().toISOString().slice(0, 10),
+    valid: Number($("qValid").value) || 30, client: $("qClient").value, clientAddr: $("qClientAddr").value,
+    title: $("qTitleInput").value, note: $("qNote").value, items,
+  });
+});
+
+function printQuote(q) {
+  const t = totals(q.items);
+  const rows = q.items.map(i => `<tr><td>${esc(i.name)}</td><td class="r">${i.qty} ${esc(i.unit)}</td>
+    <td class="r">${money(i.price)}</td><td class="r">${money(i.qty * i.price)}</td></tr>`).join("");
+  const d = new Date(q.date);
+  const until = new Date(d.getTime() + q.valid * 864e5);
+  $("print-area").innerHTML = `
+    <h2 style="margin:0">Cenová nabídka č. ${esc(q.no)}</h2>
+    <p>${esc(q.title)}</p>
+    <table style="width:100%"><tr>
+      <td style="vertical-align:top"><strong>Dodavatel</strong><br>${esc(settings.firma)}<br>${esc(settings.adresa)}<br>
+        IČO: ${esc(settings.ico)}${settings.dic ? "<br>DIČ: " + esc(settings.dic) : "<br>Nejsme plátci DPH"}<br>Účet: ${esc(settings.ucet)}</td>
+      <td style="vertical-align:top"><strong>Odběratel</strong><br>${esc(q.client)}<br>${esc(q.clientAddr)}</td>
+    </tr></table>
+    <p>Datum vystavení: ${d.toLocaleDateString("cs-CZ")} · Platnost do: ${until.toLocaleDateString("cs-CZ")}</p>
+    <table><thead><tr><th>Položka</th><th class="r">Množství</th><th class="r">Cena/jedn.</th><th class="r">Celkem</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <table style="width:40%;margin-left:auto">
+      <tr><td>Základ</td><td class="r">${money(t.base)}</td></tr>
+      ${settings.dph ? `<tr><td>DPH ${settings.dph} %</td><td class="r">${money(t.vat)}</td></tr>` : ""}
+      <tr><td><strong>Celkem</strong></td><td class="r"><strong>${money(t.total)}</strong></td></tr>
+    </table>
+    ${q.note ? `<p>${esc(q.note)}</p>` : ""}`;
+  window.print();
+}
+
+function renderQuotes() {
+  $("quotes").innerHTML = quotes.length ? quotes.map(q => {
+    const t = totals(q.items);
+    return `<div class="row"><div class="grow"><strong>${esc(q.no)}</strong> · ${esc(q.client)}
+      <div class="muted">${esc(q.title)} · ${money(t.total)} vč. DPH</div></div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <button class="ghost small" data-q="edit" data-id="${q.id}">Upravit</button>
+        <button class="ghost small" data-q="print" data-id="${q.id}">PDF</button>
+        <button class="danger small" data-q="del" data-id="${q.id}">×</button></div></div>`;
+  }).join("") : `<p class="muted">Zatím žádné nabídky.</p>`;
+}
+$("quotes").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-q]"); if (!b) return;
+  const q = quotes.find(x => x.id === b.dataset.id); if (!q) return;
+  if (b.dataset.q === "del") { if (confirm("Smazat nabídku " + q.no + "?")) { quotes = quotes.filter(x => x !== q); saveQuotes(); renderQuotes(); } }
+  if (b.dataset.q === "print") printQuote(q);
+  if (b.dataset.q === "edit") {
+    $("qEditId").value = q.id; $("qClient").value = q.client; $("qClientAddr").value = q.clientAddr || "";
+    $("qTitleInput").value = q.title; $("qValid").value = q.valid; $("qDate").value = q.date; $("qNote").value = q.note || "";
+    $("qItems").innerHTML = ""; q.items.forEach(addItemRow); updateTotals();
+    $("qTitle").textContent = "Úprava nabídky " + q.no;
+    window.scrollTo(0, 0);
+  }
+});
+
+function quoteFromProject(p) {
+  clearQuote();
+  $("qClient").value = p.client || ""; $("qTitleInput").value = p.name;
+  $("qItems").innerHTML = "";
+  (p.items.length ? p.items : [{ name: "", qty: 1, unit: "ks", price: 0 }]).forEach(i => addItemRow(i));
+  updateTotals();
+}
+
+function renderAll() { renderProjects(); renderQuotes(); fillSettings(); clearQuote(); }
+
+/* ---------- start ---------- */
+(async function init() {
+  if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js");
+  const saved = localStorage.getItem("asist_pass");
+  renderAll();
+  if (saved) { await unlock(saved); }
+  else show("lock");
+})();
+</script>
+</body>
+</html>
