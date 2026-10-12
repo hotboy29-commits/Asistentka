@@ -65,6 +65,15 @@
   .chatform { display:flex; gap:8px; }
   .chatform input { flex:1; }
   .chatform button { flex:0 0 auto; }
+  .zk { border-top:1px solid var(--line); padding:10px 0; }
+  .zk:first-of-type { border-top:0; }
+  .zk summary { cursor:pointer; list-style:none; }
+  .zk summary::-webkit-details-marker { display:none; }
+  .zk-head { display:flex; justify-content:space-between; gap:8px; align-items:center; }
+  .zk-body { margin-top:8px; font-size:15px; }
+  .zk-body > div { margin:4px 0; }
+  .chip-s { display:inline-block; padding:3px 9px; border-radius:999px; background:var(--bg); border:1px solid var(--line); font-size:13px; margin:2px 3px 2px 0; }
+  .zk-stav { font-size:12px; padding:2px 8px; border-radius:999px; background:var(--bg); border:1px solid var(--line); white-space:nowrap; }
   #print-area { display:none; }
   @media print {
     body * { visibility:hidden; }
@@ -115,7 +124,9 @@
         <h2>Zakázky – co je potřeba</h2>
         <div id="planDb"></div>
         <h2 style="margin-top:14px">Všechny zakázky</h2>
-        <div id="zakazkyDb"></div>
+        <input id="zkSearch" placeholder="Hledat (název, klient, vybavení…)" autocomplete="off" style="margin-bottom:8px">
+        <label class="check"><input id="zkDone" type="checkbox"> Zobrazit i hotové</label>
+        <div id="zakazkyDb" style="margin-top:8px"></div>
       </div>
       <div class="card">
         <h2>Důležité e-maily</h2>
@@ -312,10 +323,7 @@ function renderData() {
       <div class="muted">${when}</div></div></div>`;
   }).join("") : `<p class="muted">Na příštích 7 dní nic nevyžaduje akci.</p>`;
 
-  const zk = DATA.zakazky || [];
-  $("zakazkyDb").innerHTML = zk.length ? zk.map(z => `<div class="row"><div class="grow">${
-    Object.entries(z).filter(([k, v]) => !/(^id$|_id$|uuid)/i.test(k) && v !== null && v !== "").slice(0, 10).map(([k, v]) => `<div><span class="muted">${esc(k)}:</span> ${esc(typeof v === "object" ? JSON.stringify(v) : v)}</div>`).join("")
-  }</div></div>`).join("") : `<p class="muted">Žádné zakázky v databázi, nebo se nepodařilo načíst.</p>`;
+  renderZakazky();
 
   const imp = (DATA.emails || []).filter(m => m.category === "dulezite");
   $("importantMails").innerHTML = imp.length ? imp.map(mailRow).join("") :
@@ -346,6 +354,69 @@ $("mailFilter").addEventListener("click", (e) => {
   document.querySelectorAll("#mailFilter .chip").forEach(c => c.classList.toggle("on", c === b));
   renderMails();
 });
+
+/* ---------- ZAKÁZKY v databázi: přehledný seznam ---------- */
+const ZK_LABELS = { nazev:"Název", zakaznik:"Zákazník", klient:"Klient", telefon:"Telefon", prevzeti:"Převzetí",
+  deadline:"Deadline", stav:"Stav", poznamky:"Poznámky", poznamka:"Poznámka", adresa:"Adresa",
+  eq:"Vybavení", vybaveni:"Vybavení", material:"Materiál", cena:"Cena" };
+const normKey = (k) => String(k).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const zkLabel = (k) => ZK_LABELS[normKey(k)] || k;
+const ZK_DONE = ["hotovo", "dokonceno", "zaplaceno", "uzavreno"];
+const ZK_USED = ["nazev", "zakaznik", "klient", "deadline", "stav"];
+
+function zkGet(z, names) {
+  for (const k of Object.keys(z)) if (names.includes(normKey(k)) && z[k] !== null && z[k] !== "") return z[k];
+  return null;
+}
+function zkParse(v) {
+  if (typeof v === "string" && /^\s*[\[{]/.test(v)) { try { return JSON.parse(v); } catch {} }
+  return v;
+}
+function zkFmt(v) {
+  v = zkParse(v);
+  if (v === null || v === undefined || v === "" || (Array.isArray(v) && !v.length)) return "";
+  if (Array.isArray(v)) {
+    if (v.every(x => x === null || typeof x !== "object"))
+      return `<div>${v.filter(x => x !== null && x !== "").map(x => `<span class="chip-s">${esc(x)}</span>`).join("")}</div>`;
+    return v.map(x => `<div>• ${esc(Object.values(x || {}).filter(Boolean).join(" · "))}</div>`).join("");
+  }
+  if (typeof v === "object")
+    return Object.entries(v).filter(([, x]) => x !== null && x !== "").map(([k, x]) => `<div><span class="muted">${esc(zkLabel(k))}:</span> ${esc(x)}</div>`).join("");
+  return esc(v);
+}
+function zkDate(v) {
+  if (!v) return "";
+  const d = new Date(String(v).slice(0, 10));
+  return isNaN(d) ? esc(v) : d.toLocaleDateString("cs-CZ", { day: "numeric", month: "numeric", year: "numeric" });
+}
+function renderZakazky() {
+  const all = DATA?.zakazky || [];
+  const q = ($("zkSearch").value || "").trim().toLowerCase();
+  const showDone = $("zkDone").checked;
+  const rows = all
+    .filter(z => showDone || !ZK_DONE.includes(normKey(zkGet(z, ["stav"]) || "")))
+    .filter(z => !q || JSON.stringify(z).toLowerCase().includes(q))
+    .sort((a, b) => String(zkGet(a, ["deadline"]) || "9999").localeCompare(String(zkGet(b, ["deadline"]) || "9999")));
+  if (!all.length) { $("zakazkyDb").innerHTML = `<p class="muted">Žádné zakázky v databázi, nebo se nepodařilo načíst.</p>`; return; }
+  if (!rows.length) { $("zakazkyDb").innerHTML = `<p class="muted">Nic nenalezeno.</p>`; return; }
+  $("zakazkyDb").innerHTML = `<p class="muted">Počet: ${rows.length}</p>` + rows.map(z => {
+    const name = zkGet(z, ["nazev"]) || "(bez názvu)";
+    const klient = zkGet(z, ["zakaznik", "klient"]) || "";
+    const deadline = zkGet(z, ["deadline"]);
+    const stav = zkGet(z, ["stav"]) || "";
+    const rest = Object.entries(z).filter(([k, v]) => !ZK_USED.includes(normKey(k)) && !/(^id$|_id$|uuid|created|updated)/i.test(k) && v !== null && v !== "");
+    return `<details class="zk">
+      <summary><div class="zk-head"><strong>${esc(name)}</strong>${stav ? `<span class="zk-stav">${esc(stav)}</span>` : ""}</div>
+        <div class="muted">${esc(klient)}${deadline ? (klient ? " · " : "") + "deadline " + zkDate(deadline) : ""}</div></summary>
+      <div class="zk-body">${rest.map(([k, v]) => {
+        const html = zkFmt(v);
+        return html ? `<div><div class="muted" style="font-size:13px">${esc(zkLabel(k))}</div>${html}</div>` : "";
+      }).join("") || `<p class="muted">Žádné další údaje.</p>`}</div>
+    </details>`;
+  }).join("");
+}
+$("zkSearch").addEventListener("input", renderZakazky);
+$("zkDone").addEventListener("change", renderZakazky);
 
 /* ---------- navigace ---------- */
 function show(which) {
