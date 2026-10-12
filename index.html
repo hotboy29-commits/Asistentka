@@ -207,6 +207,8 @@
         <p class="muted" id="keyState">Klíč Gemini zatím není uložen.</p>
         <label for="gKey">Klíč Gemini (uloží se jen do tohoto zařízení)</label>
         <input id="gKey" type="password" autocomplete="off">
+        <label for="gModel">Model</label>
+        <input id="gModel" value="gemini-3.8-flash" autocomplete="off">
         <div class="actions">
           <button id="saveKey" class="ghost">Uložit klíč</button>
           <button id="forgetKey" class="danger">Smazat klíč</button>
@@ -611,7 +613,7 @@ async function askAssistant(text) {
   const pending = addMsg("bot", "Přemýšlím…");
   $("chatSend").disabled = true;
   try {
-    const model = localStorage.getItem("asist_model") || "gemini-2.5-flash";
+    const model = localStorage.getItem("asist_model") || "gemini-3.8-flash";
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": key },
@@ -645,8 +647,10 @@ $("chatForm").addEventListener("submit", (e) => {
 document.querySelectorAll(".quick").forEach(b => b.addEventListener("click", () => askAssistant(b.dataset.q)));
 $("saveKey").addEventListener("click", () => {
   const k = $("gKey").value.trim();
-  if (!k) return;
-  localStorage.setItem("asist_gemini", k);
+  const m = $("gModel").value.trim() || "gemini-3.8-flash";
+  localStorage.setItem("asist_model", m);
+  if (k) localStorage.setItem("asist_gemini", k);
+  if (!k && !localStorage.getItem("asist_gemini")) return;
   $("gKey").value = "";
   $("keyState").textContent = "Klíč je uložen v tomto zařízení ✓";
 });
@@ -655,6 +659,7 @@ $("forgetKey").addEventListener("click", () => {
   $("keyState").textContent = "Klíč byl smazán.";
 });
 if (localStorage.getItem("asist_gemini")) $("keyState").textContent = "Klíč je uložen v tomto zařízení ✓";
+$("gModel").value = localStorage.getItem("asist_model") || "gemini-3.8-flash";
 
 /* ---------- start ---------- */
 (async function init() {
