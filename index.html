@@ -112,6 +112,10 @@
         <div id="events"></div>
       </div>
       <div class="card">
+        <h2>Zakázky (z databáze)</h2>
+        <div id="zakazkyDb"></div>
+      </div>
+      <div class="card">
         <h2>Důležité e-maily</h2>
         <div id="importantMails"></div>
       </div>
@@ -297,6 +301,11 @@ function renderData() {
       <div><strong>${esc(e.title)}</strong></div>
       <div class="muted">${esc(day)}${e.location ? " · " + esc(e.location) : ""}</div></div></div>`;
   }).join("") : `<p class="muted">Žádné události v následujících 48 hodinách.</p>`;
+
+  const zk = DATA.zakazky || [];
+  $("zakazkyDb").innerHTML = zk.length ? zk.map(z => `<div class="row"><div class="grow">${
+    Object.entries(z).slice(0, 8).map(([k, v]) => `<div><span class="muted">${esc(k)}:</span> ${esc(typeof v === "object" ? JSON.stringify(v) : v)}</div>`).join("")
+  }</div></div>`).join("") : `<p class="muted">Žádné zakázky v databázi, nebo se nepodařilo načíst.</p>`;
 
   const imp = (DATA.emails || []).filter(m => m.category === "dulezite");
   $("importantMails").innerHTML = imp.length ? imp.map(mailRow).join("") :
@@ -593,7 +602,7 @@ function buildContext() {
   const mails = (DATA?.emails || []).slice(0, 20).map(m => `- [${CAT[m.category] || m.category}] ${m.from}: ${m.subject}${m.summary ? " – " + m.summary : ""}`).join("\n") || "(žádné)";
   const proj = projects.map(p => `- ${p.name} (klient: ${p.client || "-"}, termín: ${p.deadline || "-"}); materiál: ${p.items.map(i => `${i.name} ${i.qty} ${i.unit}${i.ordered ? " [objednáno]" : ""}`).join(", ") || "žádný"}`).join("\n") || "(žádné)";
   const qs = quotes.slice(0, 10).map(q => `- ${q.no} pro ${q.client}: ${q.title}, celkem ${money(totals(q.items).total)} vč. DPH`).join("\n") || "(žádné)";
-  return `Teď je ${now.toLocaleString("cs-CZ")}.\n\nUdálosti (48 h):\n${ev}\n\nE-maily (24 h):\n${mails}\n\nZakázky:\n${proj}\n\nNabídky:\n${qs}\n\nFirma: ${settings.firma || "-"}, IČO ${settings.ico || "-"}, DPH ${settings.dph} %.`;
+  return `Teď je ${now.toLocaleString("cs-CZ")}.\n\nUdálosti (48 h):\n${ev}\n\nE-maily (24 h):\n${mails}\n\nZakázky:\n${proj}\n\nNabídky:\n${qs}\n\nZakázky z databáze (JSON):\n${JSON.stringify(DATA?.zakazky || []).slice(0, 8000)}\n\nFirma: ${settings.firma || "-"}, IČO ${settings.ico || "-"}, DPH ${settings.dph} %.`;
 }
 
 function addMsg(role, text) {

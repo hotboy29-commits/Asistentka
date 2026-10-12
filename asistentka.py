@@ -292,6 +292,30 @@ def fetch_events(user: str, password: str, start: dt.datetime, end: dt.datetime)
 
 
 # --------------------------------------------------------------------------
+# Zakázky (Supabase, čtení přes service_role klíč – jen na serveru)
+# --------------------------------------------------------------------------
+def _supabase_headers(key: str) -> dict:
+    # Nové klíče (sb_secret_...) se posílají jen v hlavičce apikey.
+    # Starý service_role klíč (JWT) se navíc posílá jako Bearer token.
+    headers = {"apikey": key}
+    if not key.startswith("sb_"):
+        headers["Authorization"] = f"Bearer {key}"
+    return headers
+
+
+def fetch_zakazky(url: str, key: str, table: str = "zakazky") -> list[dict]:
+    resp = requests.get(
+        f"{url.rstrip('/')}/rest/v1/{table}",
+        params={"select": "*", "limit": "500"},
+        headers=_supabase_headers(key),
+        timeout=30,
+    )
+    resp.raise_for_status()
+    rows = resp.json()
+    return rows if isinstance(rows, list) else []
+
+
+# --------------------------------------------------------------------------
 # Připomínky, ranní souhrn, odesílání (ntfy)
 # --------------------------------------------------------------------------
 def send_push(title: str, message: str, priority: int = 3) -> None:
@@ -392,6 +416,7 @@ def main() -> int:
     errors: list[str] = []
     events: list[dict] = []
     mails: list[dict] = []
+    zakazky: list[dict] = []
 
     if args.demo:
         os.environ["NTFY_TOPIC"] = ""  # demo nikdy neposílá push
@@ -428,6 +453,19 @@ def main() -> int:
         else:
             errors.append("Kalendář: chybí ICLOUD_USER / ICLOUD_APP_PASS")
 
+        # --- zakázky z Supabase
+        sb_url, sb_key = env("SUPABASE_URL"), env("SUPABASE_SERVICE_KEY")
+        if sb_url and sb_key:
+            try:
+                zakazky = fetch_zakazky(sb_url, sb_key)
+                log(f"Zakázky: {len(zakazky)}")
+            except Exception as exc:
+                errors.append(f"Zakázky: {exc}")
+                zakazky = prev.get("zakazky", [])
+        else:
+            errors.append("Zakázky: chybí SUPABASE_URL / SUPABASE_SERVICE_KEY")
+            zakazky = prev.get("zakazky", [])
+
     # --- připomínky
     for title, body in due_reminders(events, now, state["notified"]):
         log("Připomínka:", title)
@@ -450,6 +488,7 @@ def main() -> int:
         "updated": now.isoformat(),
         "events": events,
         "emails": mails,
+        "zakazky": zakazky,
         "reklama_count": sum(1 for m in mails if m.get("category") == "reklama"),
         "morning_text": state.get("last_morning_text", ""),
         "errors": errors,
