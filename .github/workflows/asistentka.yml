@@ -36,6 +36,8 @@ jobs:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           VIP_SENDERS: ${{ secrets.VIP_SENDERS }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: python asistentka.py
 
       - name: Uložit zašifrovaná data
