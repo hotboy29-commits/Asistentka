@@ -1,0 +1,51 @@
+name: Asistentka
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # každých 15 minut
+  workflow_dispatch:          # ruční spuštění z GitHubu
+
+permissions:
+  contents: write
+
+concurrency:
+  group: asistentka
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Spustit asistentku
+        env:
+          ASIST_PASS: ${{ secrets.ASIST_PASS }}
+          MAIL_USER: ${{ secrets.MAIL_USER }}
+          MAIL_PASS: ${{ secrets.MAIL_PASS }}
+          ICLOUD_USER: ${{ secrets.ICLOUD_USER }}
+          ICLOUD_APP_PASS: ${{ secrets.ICLOUD_APP_PASS }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          VIP_SENDERS: ${{ secrets.VIP_SENDERS }}
+        run: python asistentka.py
+
+      - name: Uložit zašifrovaná data
+        run: |
+          git config user.name "asistentka-bot"
+          git config user.email "asistentka-bot@users.noreply.github.com"
+          git add data.enc.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Aktualizace dat $(date -u +%Y-%m-%dT%H:%MZ)"
+            git push
+          else
+            echo "Beze změn."
+          fi

@@ -28,8 +28,8 @@ from zoneinfo import ZoneInfo
 import requests
 
 TZ = ZoneInfo("Europe/Prague")
-ROOT = Path(__file__).resolve().parent.parent
-DATA_FILE = ROOT / "docs" / "data.enc.json"
+ROOT = Path(__file__).resolve().parent
+DATA_FILE = ROOT / "data.enc.json"
 PBKDF2_ITER = 200_000          # musí být stejné jako v docs/index.html
 MORNING_FROM_HOUR = 7          # ranní souhrn: od 7:00 do 11:00, jednou denně
 MORNING_TO_HOUR = 11

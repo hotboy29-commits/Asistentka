@@ -17,7 +17,7 @@ Vše běží zdarma: GitHub Actions (veřejný repozitář), GitHub Pages, ntfy.
 1. Založ si účet na https://github.com (zdarma).
 2. Vytvoř **veřejný** repozitář `asistentka` a nahraj do něj obsah této složky.
    (Veřejný repozitář = neomezené minuty pro GitHub Actions. U soukromého by běh každých 15 minut překročil zdarma limit.)
-3. **Settings → Pages → Build and deployment → Source: Deploy from a branch → Branch: `main`, folder `/docs`.**
+3. **Settings → Pages → Source: Deploy from a branch → Branch: `main`, folder `/ (root)`.**
    Aplikace bude na `https://TVOJE-JMENO.github.io/asistentka/`.
 
 ### 2. Tajné údaje (Settings → Secrets and variables → Actions → New repository secret)
@@ -43,7 +43,7 @@ Vše běží zdarma: GitHub Actions (veřejný repozitář), GitHub Pages, ntfy.
 3. Spusť ikonu z plochy, zadej heslo `ASIST_PASS` a zaškrtni „Pamatovat na tomto zařízení“.
 
 ### 5. První spuštění
-V repozitáři otevři **Actions → Asistentka → Run workflow**. Po minutě se objeví `docs/data.enc.json` a aplikace začne ukazovat data. Dál to běží samo každých 15 minut.
+V repozitáři otevři **Actions → Asistentka → Run workflow**. Po minutě se objeví `data.enc.json` a aplikace začne ukazovat data. Dál to běží samo každých 15 minut.
 
 ## Omezení (upřímně)
 - GitHub Actions spouští úlohy přibližně každých 15 minut, takže připomínka může přijít s několikaminutovým zpožděním.
@@ -55,6 +55,6 @@ V repozitáři otevři **Actions → Asistentka → Run workflow**. Po minutě s
 ## Lokální test (bez přístupů)
 ```bash
 pip install -r requirements.txt
-ASIST_PASS=test123 python3 scripts/asistentka.py --demo
+ASIST_PASS=test123 python3 asistentka.py --demo
 cd docs && python3 -m http.server 8000   # otevři http://localhost:8000 a zadej test123
 ```
