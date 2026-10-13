@@ -759,9 +759,13 @@ function renderReminders() {
     ? "Naplánované připomínky:\n" + list.map(r => `• ${new Date(r.at).toLocaleString("cs-CZ")} – ${r.text}`).join("\n")
     : "Žádné naplánované připomínky.";
 }
+function cleanTopic(raw) {
+  return (raw || "").trim().replace(/^https?:\/\/ntfy\.sh\//i, "").replace(/\/+$/, "");
+}
 async function scheduleReminder(at, text) {
-  const topic = localStorage.getItem("asist_ntfy");
+  const topic = cleanTopic(localStorage.getItem("asist_ntfy"));
   if (!topic) throw new Error("v nastavení není vyplněné téma ntfy");
+  if (!/^[-_A-Za-z0-9]{1,64}$/.test(topic)) throw new Error("téma ntfy je zapsané chybně (jen názvu bez mezer, diakritiky a adresy; zkopíruj ho z aplikace ntfy)");
   const when = new Date(at);
   if (isNaN(when)) throw new Error("neznámý čas " + at);
   const secs = Math.floor(when.getTime() / 1000) - Math.floor(Date.now() / 1000);
@@ -773,7 +777,11 @@ async function scheduleReminder(at, text) {
     body: JSON.stringify({ topic, title: "Připomínka", message: text, tags: ["alarm_clock"], priority: 4,
                            delay: String(Math.floor(when.getTime() / 1000)) }),
   });
-  if (!r.ok) throw new Error("ntfy vrátilo HTTP " + r.status);
+  if (!r.ok) {
+    let detail = "";
+    try { detail = (await r.json()).error || ""; } catch { detail = ""; }
+    throw new Error("ntfy vrátilo HTTP " + r.status + (detail ? " (" + detail + ")" : ""));
+  }
   return when;
 }
 async function applyAction(action) {
@@ -850,8 +858,10 @@ $("saveMem").addEventListener("click", () => {
 });
 $("saveTopic").addEventListener("click", () => {
   const t = $("ntfyTopic").value.trim();
-  if (t) localStorage.setItem("asist_ntfy", t); else localStorage.removeItem("asist_ntfy");
-  $("topicState").textContent = t ? "Téma uloženo ✓" : "Téma smazáno.";
+  const c = cleanTopic(t);
+  if (c) localStorage.setItem("asist_ntfy", c); else localStorage.removeItem("asist_ntfy");
+  $("ntfyTopic").value = c;
+  $("topicState").textContent = !c ? "Téma smazáno." : /^[-_A-Za-z0-9]{1,64}$/.test(c) ? "Téma uloženo ✓" : "Pozor: téma obsahuje nepovolené znaky, zkopíruj ho přesně z aplikace ntfy.";
 });
 $("clearChat").addEventListener("click", () => {
   if (!confirm("Smazat historii chatu? Paměť zůstane.")) return;
