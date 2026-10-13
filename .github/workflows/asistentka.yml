@@ -2,8 +2,8 @@ name: Asistentka
 
 on:
   schedule:
-    - cron: "*/15 * * * *"   # každých 15 minut
-  workflow_dispatch:          # ruční spuštění z GitHubu
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -45,9 +45,18 @@ jobs:
           git config user.name "asistentka-bot"
           git config user.email "asistentka-bot@users.noreply.github.com"
           git add data.enc.json
-          if ! git diff --cached --quiet; then
-            git commit -m "Aktualizace dat $(date -u +%Y-%m-%dT%H:%MZ)"
-            git push
-          else
+          if git diff --cached --quiet; then
             echo "Beze změn."
+            exit 0
           fi
+          git commit -m "Aktualizace dat $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 3 4 5; do
+            if git pull --rebase -X theirs origin main && git push origin HEAD:main; then
+              echo "Uloženo."
+              exit 0
+            fi
+            echo "Pokus $i selhal, zkusím to znovu."
+            sleep 5
+          done
+          echo "Data se nepodařilo uložit."
+          exit 1
