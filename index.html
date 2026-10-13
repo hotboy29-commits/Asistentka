@@ -302,7 +302,7 @@ function renderData() {
   const upd = new Date(DATA.updated);
   $("updated").textContent = "Aktualizováno " + dayName(upd) + " " + hm(upd);
   $("errors").innerHTML = (DATA.errors || []).map(e => `<div class="err">${esc(e)}</div>`).join("");
-  $("morning").textContent = DATA.morning_text || "Zatím žádný souhrn – přijde v 7:00.";
+  $("morning").textContent = DATA.morning_text || "Zatím žádný souhrn – přijde mezi 8:00 a 11:00.";
 
   const now = new Date();
   const ev = (DATA.events || []).slice().sort((a, b) => a.start.localeCompare(b.start));
