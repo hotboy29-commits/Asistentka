@@ -512,8 +512,7 @@ def main() -> int:
             except Exception as exc:
                 errors.append(f"Kalendář: {exc}")
                 events = prev.get("events", [])
-        else:
-            errors.append("Kalendář: chybí ICLOUD_USER / ICLOUD_APP_PASS")
+        # Kalendář zatím není nastavený (chybí ICLOUD_USER / ICLOUD_APP_PASS) – nic nehlásíme.
 
         # --- zakázky z Supabase
         sb_url, sb_key = env("SUPABASE_URL"), env("SUPABASE_SERVICE_KEY")
