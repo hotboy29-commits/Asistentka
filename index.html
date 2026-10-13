@@ -835,17 +835,23 @@ async function scheduleReminder(at, text) {
 }
 const SB_URL = "https://cxpqpbnwytxtgiwbgrds.supabase.co";
 async function saveEntry(row) {
-  const key = localStorage.getItem("asist_sb_anon");
+  // klíč očistíme od mezer a neviditelných znaků, jinak prohlížeč hlásí jen „Type error“
+  const key = (localStorage.getItem("asist_sb_anon") || "").replace(/[^\x21-\x7E]/g, "");
   if (!key) throw new Error("v nastavení není vyplněný klíč Supabase");
-  const r = await fetch(`${SB_URL}/rest/v1/polozky`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", apikey: key, Authorization: "Bearer " + key, Prefer: "return=minimal" },
-    body: JSON.stringify(row),
-  });
+  let r;
+  try {
+    r = await fetch(SB_URL + "/rest/v1/polozky", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "apikey": key, "Prefer": "return=minimal" },
+      body: JSON.stringify(row),
+    });
+  } catch (err) {
+    throw new Error("požadavek na Supabase selhal (" + (err && err.message ? err.message : String(err)) + ")");
+  }
   if (!r.ok) {
     let d = "";
     try { d = (await r.json()).message || ""; } catch { d = ""; }
-    throw new Error("Supabase HTTP " + r.status + (d ? " (" + d + ")" : ""));
+    throw new Error("Supabase HTTP " + r.status + (d ? ": " + d : ""));
   }
 }
 function localDay(d) { const p = n => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; }
