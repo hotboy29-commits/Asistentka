@@ -303,6 +303,19 @@ def _supabase_headers(key: str) -> dict:
     return headers
 
 
+def fetch_polozky(url: str, key: str, day: str) -> list[dict]:
+    """Položky, které jsem nadiktoval asistentce (tabulka polozky), pro daný den."""
+    resp = requests.get(
+        f"{url.rstrip('/')}/rest/v1/polozky",
+        params={"select": "typ,cas,text,misto", "den": f"eq.{day}", "order": "id.asc", "limit": "200"},
+        headers=_supabase_headers(key),
+        timeout=30,
+    )
+    resp.raise_for_status()
+    rows = resp.json()
+    return rows if isinstance(rows, list) else []
+
+
 def fetch_zakazky(url: str, key: str, table: str = "zakazky") -> list[dict]:
     resp = requests.get(
         f"{url.rstrip('/')}/rest/v1/{table}",
@@ -413,13 +426,25 @@ def plan_line(item: dict) -> str:
     return f"• {item['akce']}: {item['zakazka']}{who} ({when})"
 
 
-def morning_text(now: dt.datetime, events: list[dict], mails: list[dict], plan: list[dict] | None = None) -> str:
+def morning_text(now: dt.datetime, events: list[dict], mails: list[dict], plan: list[dict] | None = None,
+                 polozky: list[dict] | None = None) -> str:
     today = [e for e in events if parse_iso(e["start"]).date() == now.date()]
     lines = [f"Dobré ráno! Dnes máš {len(today)} událost(í)."]
     for e in today:
         when = "celý den" if e["allDay"] else parse_iso(e["start"]).strftime("%H:%M")
         where = f' ({e["location"]})' if e["location"] else ""
         lines.append(f"• {when} {e['title']}{where}")
+
+    if polozky:
+        lines.append("\nDnes máš v zápisu:")
+        for p in polozky:
+            text = str(p.get("text") or "")
+            misto = f" ({p['misto']})" if p.get("misto") else ""
+            if p.get("typ") == "ukol":
+                cas = str(p.get("cas") or "").strip()
+                lines.append(f"• Úkol{(' ' + cas) if cas else ''}: {text}{misto}")
+            else:
+                lines.append(f"• {str(p.get('cas') or '').strip() or 'bez času'} – {text}{misto}")
 
     since = now - dt.timedelta(hours=14)
     night = [m for m in mails if parse_iso(m["date"]) >= since]
@@ -479,6 +504,7 @@ def main() -> int:
     events: list[dict] = []
     mails: list[dict] = []
     zakazky: list[dict] = []
+    polozky: list[dict] = []
 
     if args.demo:
         os.environ["NTFY_TOPIC"] = ""  # demo nikdy neposílá push
@@ -523,6 +549,12 @@ def main() -> int:
             except Exception as exc:
                 errors.append(f"Zakázky: {exc}")
                 zakazky = prev.get("zakazky", [])
+            try:
+                polozky = fetch_polozky(sb_url, sb_key, now.date().isoformat())
+                log(f"Položky na dnes: {len(polozky)}")
+            except Exception as exc:
+                errors.append(f"Zápis (položky): {exc}")
+                polozky = []
         else:
             errors.append("Zakázky: chybí SUPABASE_URL / SUPABASE_SERVICE_KEY")
             zakazky = prev.get("zakazky", [])
@@ -545,7 +577,7 @@ def main() -> int:
         if state.get("last_morning") == today:
             morning_status = f"odeslán dnes v {state.get('last_morning_time', '?')}"
         else:
-            text = morning_text(now, events, mails, zakazka_plan(zakazky, now.date()))
+            text = morning_text(now, events, mails, zakazka_plan(zakazky, now.date()), polozky)
             if send_push("Ranní souhrn", text, priority=3):
                 state["last_morning"] = today
                 state["last_morning_text"] = text

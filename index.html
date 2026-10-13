@@ -237,11 +237,15 @@
         <p class="muted">Tady vidíš, co si asistentka pamatuje. Pamatuje si věci sama z rozhovoru, nebo je můžeš napsat do chatu jako „zapamatuj: …“. Každou položku napiš na samostatný řádek.</p>
         <textarea id="memText" style="min-height:160px"></textarea>
         <p class="muted" id="memState"></p>
-        <p class="muted" id="remList" style="white-space:pre-line"></p>
+        <div class="muted" id="remList"></div>
         <label for="ntfyTopic">Téma ntfy (stejné jako v telefonu; uloží se jen do tohoto zařízení)</label>
         <input id="ntfyTopic" type="text" autocomplete="off" autocapitalize="off" spellcheck="false">
         <p class="muted" id="topicState"></p>
         <div class="actions"><button id="saveTopic" class="ghost">Uložit téma</button></div>
+        <label for="sbAnon">Klíč Supabase „anon public“ (jen pro zápis položek do ranního souhrnu; uloží se jen do tohoto zařízení)</label>
+        <input id="sbAnon" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <p class="muted" id="sbState"></p>
+        <div class="actions"><button id="saveSb" class="ghost">Uložit klíč Supabase</button></div>
         <div class="actions">
           <button id="saveMem" class="ghost">Uložit paměť</button>
           <button id="clearChat" class="danger">Smazat historii chatu</button>
@@ -693,11 +697,16 @@ const SYSTEM_PROMPT = `Jsi osobní asistentka a sekretářka podnikatele (řemes
 Máš přístup k údajům v části KONTEXT (kalendář, e-maily, zakázky, nabídky). Nic za něj neodesíláš, do kalendáře nic nezapisuješ a nic nevyřizuješ. Jen navrhuješ texty a plány.
 Když navrhuješ nabídku, vypiš položky v tabulce: Položka | Množství | Jednotka | Cena/jedn. bez DPH. Když cenu neznáš, napiš to a neodhaduj ji.
 Když navrhuješ objednávku materiálu, vypiš seznam s množstvím.
-AUTOMATICKÉ PAMATOVÁNÍ: Sám rozhoduj, co stojí za zapamatování. Zapamatuj si trvalá fakta, která se budou hodit později: lidi a jejich firmy, kontakty, dohody, preference, cenové podmínky, termíny zakázek a podobné věci. Nepamatuj si běžné dotazy, jednorázové povídání ani hesla a čísla účtů.
-PŘIPOMÍNKY: Když uživatel chce něco připomenout v konkrétní čas (např. „připomeň mi termín na STK ve středu v 11:00“), vypočítej datum a čas podle údajů v KONTEXTU (Dnes je ...) a naplánuj připomínku.
-Pokud něco zapamatuješ nebo naplánuješ, přidej na úplný konec odpovědi, na samostatný řádek, tento řádek (jinak ho nepiš):
-ACTION: {"remember":["krátké fakt"],"remind":[{"at":"RRRR-MM-DDTHH:MM","text":"co připomenout"}]}
-Pole remember a remind mohou být prázdná. Čas je místní pražský čas. Uživateli se o ACTION nezmiňuj, jen krátce potvrď, co jsi udělal (např. „Připomenu ti to ve středu 14. 10. v 11:00.“).`;
+AUTOMATICKÉ ZPRACOVÁNÍ ZPRÁV: Uživatel ti často něco nadiktuje bez pokynů. Jedna zpráva může obsahovat víc položek, každou zpracuj zvlášť. Sám rozhodni, co to je:
+- fakt k zapamatování (lidé, firmy, dohody, preference, termíny zakázek, cenové podmínky) → remember. Běžné dotazy, jednorázové povídání, hesla a čísla účtů si nepamatuj.
+- připomínka, tedy upozornění v konkrétní čas (třeba „připomeň mi termín na STK ve středu v 11:00“) → remind.
+- událost s časem (schůzka, návštěva, montáž u zákazníka) → events. Přidá se do kalendáře, aby ji šlo upravit.
+- úkol bez přesného času (objednat materiál, nakoupit, věc na večer) → tasks. Den urči podle údaje Dnes je v KONTEXTU, pokud uživatel neřekne jinak. Část dne (třeba „večer“ nebo „po cestě domů“) dej do pole cas.
+Pokud u připomínky nebo události chybí čas nebo datum, zeptej se a zatím ji nepřidávej.
+Přesné datum a čas počítej podle údaje Dnes je v KONTEXTU.
+Když něco zapamatuješ, naplánuješ, přidáš do kalendáře nebo zapíšeš úkol, přidej na úplný konec odpovědi, na samostatný řádek, tento řádek (jinak ho nepiš):
+ACTION: {"remember":["krátký fakt"],"remind":[{"at":"RRRR-MM-DDTHH:MM","text":"co připomenout"}],"events":[{"start":"RRRR-MM-DDTHH:MM","end":"RRRR-MM-DDTHH:MM","title":"název","location":"místo"}],"tasks":[{"day":"RRRR-MM-DD","cas":"část dne nebo prázdné","text":"co udělat"}]}
+Pole mohou být prázdná, end, location a cas nejsou povinné. Čas je místní pražský čas. Uživateli se o ACTION nezmiňuj. Jen stručně potvrď, co jsi zapsal, a řekni, že položky na dnes se objeví v ranním souhrnu. Např.: „Zapsal jsem 3 úkoly na dnes a připomínku na STK, objeví se v ranním souhrnu.“`;
 let chatItems = [];
 const CHAT_KEY = "asist_chat";
 const MEM_KEY = "asist_memory";
@@ -712,6 +721,7 @@ function loadChat() {
   chatItems.forEach(i => addMsg(i.role === "user" ? "user" : "bot", i.text));
 }
 function fillMemory() {
+  $("sbState").textContent = localStorage.getItem("asist_sb_anon") ? "Klíč je uložen v tomto zařízení ✓" : "Klíč zatím není uložen.";
   $("ntfyTopic").value = localStorage.getItem("asist_ntfy") || "";
   renderReminders();
   const mem = getMemory();
@@ -753,11 +763,50 @@ function splitAction(answer) {
 function getReminders() { try { return JSON.parse(localStorage.getItem("asist_reminders") || "[]"); } catch { return []; } }
 function setReminders(arr) { localStorage.setItem("asist_reminders", JSON.stringify(arr.slice(-100))); }
 function renderReminders() {
-  const now = new Date();
-  const list = getReminders().filter(r => new Date(r.at) > now).sort((a, b) => new Date(a.at) - new Date(b.at));
-  $("remList").textContent = list.length
-    ? "Naplánované připomínky:\n" + list.map(r => `• ${new Date(r.at).toLocaleString("cs-CZ")} – ${r.text}`).join("\n")
-    : "Žádné naplánované připomínky.";
+  const box = $("remList");
+  box.innerHTML = "";
+  const list = getReminders().filter(r => new Date(r.at) > new Date()).sort((a, b) => new Date(a.at) - new Date(b.at));
+  if (!list.length) { box.textContent = "Žádné naplánované připomínky."; return; }
+  const head = document.createElement("div");
+  head.textContent = "Naplánované připomínky:";
+  box.appendChild(head);
+  list.forEach(r => {
+    const row = document.createElement("div");
+    row.style.margin = "6px 0";
+    row.textContent = `• ${new Date(r.at).toLocaleString("cs-CZ")} – ${r.kind === "event" ? "Událost: " : ""}${r.text}${r.location ? " (" + r.location + ")" : ""}${r.mode === "ics" ? " (jen v kalendáři)" : ""} `;
+    const b = document.createElement("button");
+    b.className = "ghost";
+    b.textContent = "📅 Do kalendáře";
+    b.addEventListener("click", () => downloadIcs(r));
+    row.appendChild(b);
+    box.appendChild(row);
+  });
+}
+function icsEscape(s) {
+  return String(s).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
+}
+function makeIcs(r) {
+  const d = new Date(r.at);
+  const f = x => x.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  const isEv = r.kind === "event";
+  const endDate = r.end && !isNaN(new Date(r.end)) ? new Date(r.end) : new Date(d.getTime() + (isEv ? 60 : 15) * 60000);
+  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Asistentka//CS", "BEGIN:VEVENT",
+    "UID:asist-" + d.getTime() + "-" + (r.text || "").length + "@asistentka", "DTSTAMP:" + f(new Date()),
+    "DTSTART:" + f(d), "DTEND:" + f(endDate),
+    "SUMMARY:" + icsEscape((isEv ? "Událost: " : "Připomínka: ") + (r.text || ""))];
+  if (r.location) lines.push("LOCATION:" + icsEscape(r.location));
+  lines.push("BEGIN:VALARM", "ACTION:DISPLAY", "DESCRIPTION:" + icsEscape(r.text || ""),
+    "TRIGGER:" + (isEv ? "-PT30M" : "PT0M"), "END:VALARM", "END:VEVENT", "END:VCALENDAR");
+  return lines.join("\r\n");
+}
+function downloadIcs(r) {
+  const blob = new Blob([makeIcs(r)], { type: "text/calendar;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "pripominka.ics";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
 }
 function cleanTopic(raw) {
   return (raw || "").trim().replace(/^https?:\/\/ntfy\.sh\//i, "").replace(/\/+$/, "");
@@ -784,18 +833,67 @@ async function scheduleReminder(at, text) {
   }
   return when;
 }
+const SB_URL = "https://cxpqpbnwytxtgiwbgrds.supabase.co";
+async function saveEntry(row) {
+  const key = localStorage.getItem("asist_sb_anon");
+  if (!key) throw new Error("v nastavení není vyplněný klíč Supabase");
+  const r = await fetch(`${SB_URL}/rest/v1/polozky`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", apikey: key, Authorization: "Bearer " + key, Prefer: "return=minimal" },
+    body: JSON.stringify(row),
+  });
+  if (!r.ok) {
+    let d = "";
+    try { d = (await r.json()).message || ""; } catch { d = ""; }
+    throw new Error("Supabase HTTP " + r.status + (d ? " (" + d + ")" : ""));
+  }
+}
+function localDay(d) { const p = n => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; }
+function localTime(d) { const p = n => String(n).padStart(2, "0"); return `${p(d.getHours())}:${p(d.getMinutes())}`; }
+
 async function applyAction(action) {
   if (!action) return "";
   const notes = [];
-  const facts = (Array.isArray(action.remember) ? action.remember : []).map(s => String(s).trim()).filter(Boolean);
+  const facts = (Array.isArray(action.remember) ? action.remember : []).map(x => String(x).trim()).filter(Boolean);
   if (facts.length) { setMemory([...getMemory(), ...facts]); fillMemory(); }
-  for (const r of (Array.isArray(action.remind) ? action.remind : [])) {
+  const items = [
+    ...(Array.isArray(action.remind) ? action.remind : []).map(r => ({ kind: "reminder", at: r.at, text: r.text })),
+    ...(Array.isArray(action.events) ? action.events : []).map(ev => ({ kind: "event", at: ev.start, end: ev.end, text: ev.title, location: ev.location })),
+  ];
+  for (const it of items) {
+    const label = it.kind === "event" ? "Událost" : "Připomínka";
+    const when = new Date(it.at);
+    if (isNaN(when)) { notes.push(`⚠️ ${label} „${it.text}“ nemá čas, který rozumím.`); continue; }
+    const base = { kind: it.kind, at: when.toISOString(), text: it.text || "", location: it.location || "", end: it.end || "" };
     try {
-      const when = await scheduleReminder(r.at, r.text);
-      setReminders([...getReminders(), { at: when.toISOString(), text: r.text }]);
-      notes.push(`⏰ Připomínka naplánována na ${when.toLocaleString("cs-CZ")}.`);
+      await saveEntry({ den: localDay(when), cas: localTime(when), typ: it.kind === "event" ? "udalost" : "pripominka",
+                        text: String(it.text || "").slice(0, 500), misto: String(it.location || "").slice(0, 200) });
     } catch (e) {
-      notes.push(`⚠️ Připomínku se nepodařilo naplánovat: ${e.message}.`);
+      notes.push(`⚠️ Zápis do ranního souhrnu se nepovedl: ${e.message}.`);
+    }
+    if (when - Date.now() > 3 * 24 * 3600 * 1000 - 60000) {
+      setReminders([...getReminders(), { ...base, mode: "ics" }]);
+      notes.push(`📅 ${label} je víc než 3 dny dopředu, přidej ji do kalendáře tlačítkem v kartě Paměť asistentky (${when.toLocaleString("cs-CZ")}).`);
+      continue;
+    }
+    try {
+      const full = base.text + (base.location ? " (" + base.location + ")" : "");
+      await scheduleReminder(it.at, `${label}: ${full}`);
+      setReminders([...getReminders(), { ...base, mode: "ntfy" }]);
+      notes.push(`⏰ ${label} naplánována na ${when.toLocaleString("cs-CZ")}.`);
+    } catch (e) {
+      notes.push(`⚠️ ${label} se nepodařilo naplánovat: ${e.message}.`);
+    }
+  }
+  for (const t of (Array.isArray(action.tasks) ? action.tasks : [])) {
+    const day = String(t.day || "").trim();
+    const text = String(t.text || "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !text) { notes.push("⚠️ Úkol nemá platné datum nebo text."); continue; }
+    try {
+      await saveEntry({ den: day, cas: String(t.cas || "").trim().slice(0, 50), typ: "ukol", text: text.slice(0, 500), misto: "" });
+      notes.push(`📝 Úkol na ${day}: ${text}`);
+    } catch (e) {
+      notes.push(`⚠️ Úkol se nepovedlo uložit: ${e.message}.`);
     }
   }
   renderReminders();
@@ -855,6 +953,12 @@ $("saveMem").addEventListener("click", () => {
   const lines = $("memText").value.split("\n").map(s => s.trim()).filter(Boolean);
   setMemory(lines);
   $("memState").textContent = "Paměť uložena (" + lines.length + " položek) ✓";
+});
+$("saveSb").addEventListener("click", () => {
+  const k = $("sbAnon").value.trim();
+  if (k) localStorage.setItem("asist_sb_anon", k);
+  $("sbAnon").value = "";
+  $("sbState").textContent = localStorage.getItem("asist_sb_anon") ? "Klíč je uložen v tomto zařízení ✓" : "Klíč zatím není uložen.";
 });
 $("saveTopic").addEventListener("click", () => {
   const t = $("ntfyTopic").value.trim();
