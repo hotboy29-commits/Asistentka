@@ -226,7 +226,7 @@
         <label for="gKey">Klíč Gemini (uloží se jen do tohoto zařízení)</label>
         <input id="gKey" type="password" autocomplete="off">
         <label for="gModel">Model</label>
-        <input id="gModel" value="gemini-3.8-flash" autocomplete="off">
+        <input id="gModel" value="gemini-3.1-flash-lite" autocomplete="off">
         <div class="actions">
           <button id="saveKey" class="ghost">Uložit klíč</button>
           <button id="forgetKey" class="danger">Smazat klíč</button>
@@ -688,6 +688,7 @@ function quoteFromProject(p) {
 function renderAll() { renderProjects(); renderQuotes(); fillSettings(); clearQuote(); }
 
 /* ---------- ASISTENT (AI chat přímo z tvého zařízení) ---------- */
+if (localStorage.getItem("asist_model") === "gemini-3.8-flash") localStorage.setItem("asist_model", "gemini-3.1-flash-lite");
 const SYSTEM_PROMPT = `Jsi osobní asistentka a sekretářka podnikatele (řemeslo, stavby, montáže). Odpovídej česky, stručně a prakticky.
 Máš přístup k údajům v části KONTEXT (kalendář, e-maily, zakázky, nabídky). Nic za něj neodesíláš, do kalendáře nic nezapisuješ a nic nevyřizuješ. Jen navrhuješ texty a plány.
 Když navrhuješ nabídku, vypiš položky v tabulce: Položka | Množství | Jednotka | Cena/jedn. bez DPH. Když cenu neznáš, napiš to a neodhaduj ji.
@@ -811,7 +812,7 @@ async function askAssistant(text) {
   const pending = addMsg("bot", "Přemýšlím…");
   $("chatSend").disabled = true;
   try {
-    const model = localStorage.getItem("asist_model") || "gemini-3.8-flash";
+    const model = localStorage.getItem("asist_model") || "gemini-3.1-flash-lite";
     const contents = chatItems.filter(i => !i.err).slice(-30)
       .map(i => ({ role: i.role === "user" ? "user" : "model", parts: [{ text: i.text }] }));
     while (contents.length && contents[0].role !== "user") contents.shift();
@@ -867,7 +868,7 @@ $("chatForm").addEventListener("submit", (e) => {
 document.querySelectorAll(".quick").forEach(b => b.addEventListener("click", () => askAssistant(b.dataset.q)));
 $("saveKey").addEventListener("click", () => {
   const k = $("gKey").value.trim();
-  const m = $("gModel").value.trim() || "gemini-3.8-flash";
+  const m = $("gModel").value.trim() || "gemini-3.1-flash-lite";
   localStorage.setItem("asist_model", m);
   if (k) localStorage.setItem("asist_gemini", k);
   if (!k && !localStorage.getItem("asist_gemini")) return;
@@ -879,7 +880,7 @@ $("forgetKey").addEventListener("click", () => {
   $("keyState").textContent = "Klíč byl smazán.";
 });
 if (localStorage.getItem("asist_gemini")) $("keyState").textContent = "Klíč je uložen v tomto zařízení ✓";
-$("gModel").value = localStorage.getItem("asist_model") || "gemini-3.8-flash";
+$("gModel").value = localStorage.getItem("asist_model") || "gemini-3.1-flash-lite";
 
 /* ---------- start ---------- */
 (async function init() {

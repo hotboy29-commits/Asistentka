@@ -206,7 +206,7 @@ def refine_with_gemini(mails: list[dict]) -> None:
     key = env("GEMINI_API_KEY")
     if not key or not mails:
         return
-    model = env("GEMINI_MODEL", "gemini-3.8-flash")
+    model = env("GEMINI_MODEL", "gemini-3.1-flash-lite")
     items = [
         {"id": m["id"], "od": m["from"], "predmet": m["subject"], "text": m["snippet"][:400]}
         for m in mails[:40]
