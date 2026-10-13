@@ -318,11 +318,11 @@ def fetch_zakazky(url: str, key: str, table: str = "zakazky") -> list[dict]:
 # --------------------------------------------------------------------------
 # Připomínky, ranní souhrn, odesílání (ntfy)
 # --------------------------------------------------------------------------
-def send_push(title: str, message: str, priority: int = 3) -> None:
+def send_push(title: str, message: str, priority: int = 3) -> bool:
     topic = env("NTFY_TOPIC")
     if not topic:
         log("NTFY_TOPIC není nastaven – push se neodeslal:", title)
-        return
+        return False
     try:
         requests.post(
             "https://ntfy.sh",
@@ -330,8 +330,10 @@ def send_push(title: str, message: str, priority: int = 3) -> None:
                   "tags": ["bell"]},
             timeout=20,
         ).raise_for_status()
+        return True
     except Exception as exc:
         log("Push se nepodařilo odeslat:", exc)
+        return False
 
 
 def due_reminders(events: list[dict], now: dt.datetime, notified: dict) -> list[tuple[str, str]]:
@@ -535,14 +537,24 @@ def main() -> int:
     state["notified"] = {k: v for k, v in state["notified"].items()
                          if parse_iso(v) > cutoff}
 
-    # --- ranní souhrn (jednou denně, mezi 7:00 a 11:00)
+    # --- ranní souhrn (jednou denně, od 8:00 do 13:00)
     today = now.date().isoformat()
-    if MORNING_FROM_HOUR <= now.hour < MORNING_TO_HOUR and state.get("last_morning") != today:
-        text = morning_text(now, events, mails, zakazka_plan(zakazky, now.date()))
-        send_push("Ranní souhrn", text, priority=3)
-        state["last_morning"] = today
-        state["last_morning_text"] = text
-        log("Ranní souhrn odeslán")
+    morning_status = f"čeká – posílá se od {MORNING_FROM_HOUR}:00 do {MORNING_TO_HOUR}:00"
+    if now.hour >= MORNING_TO_HOUR and state.get("last_morning") != today:
+        morning_status = f"dnešní okno skončilo ({MORNING_TO_HOUR}:00), zítra se pošle v {MORNING_FROM_HOUR}:00 nebo později"
+    if MORNING_FROM_HOUR <= now.hour < MORNING_TO_HOUR:
+        if state.get("last_morning") == today:
+            morning_status = f"odeslán dnes v {state.get('last_morning_time', '?')}"
+        else:
+            text = morning_text(now, events, mails, zakazka_plan(zakazky, now.date()))
+            if send_push("Ranní souhrn", text, priority=3):
+                state["last_morning"] = today
+                state["last_morning_text"] = text
+                state["last_morning_time"] = now.strftime("%H:%M")
+                morning_status = f"odeslán teď v {now:%H:%M}"
+                log("Ranní souhrn odeslán")
+            else:
+                morning_status = f"odeslání selhalo v {now:%H:%M} (zkusí se znovu při dalším běhu)"
 
     data = {
         "updated": now.isoformat(),
@@ -552,6 +564,7 @@ def main() -> int:
         "zakazky_plan": zakazka_plan(zakazky, now.date()),
         "reklama_count": sum(1 for m in mails if m.get("category") == "reklama"),
         "morning_text": state.get("last_morning_text", ""),
+        "morning_status": morning_status,
         "errors": errors,
         "state": state,
     }

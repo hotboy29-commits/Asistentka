@@ -114,6 +114,7 @@
       <div id="errors"></div>
       <div class="card">
         <h2>Ranní souhrn</h2>
+        <div class="muted" id="morningStatus" style="font-size:13px;margin-bottom:6px"></div>
         <pre class="morning" id="morning">Zatím žádný souhrn.</pre>
       </div>
       <div class="card">
@@ -303,6 +304,7 @@ function renderData() {
   $("updated").textContent = "Aktualizováno " + dayName(upd) + " " + hm(upd);
   $("errors").innerHTML = (DATA.errors || []).map(e => `<div class="err">${esc(e)}</div>`).join("");
   $("morning").textContent = DATA.morning_text || "Zatím žádný souhrn – přijde mezi 8:00 a 11:00.";
+  $("morningStatus").textContent = DATA.morning_status ? "Stav: " + DATA.morning_status : "";
 
   const now = new Date();
   const ev = (DATA.events || []).slice().sort((a, b) => a.start.localeCompare(b.start));
