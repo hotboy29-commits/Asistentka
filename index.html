@@ -234,9 +234,14 @@
       </div>
       <div class="card">
         <h2>Paměť asistentky</h2>
-        <p class="muted">Tady vidíš, co si asistentka pamatuje. Každou položku napiš na samostatný řádek. Nová položka: napiš do chatu „zapamatuj: …“.</p>
+        <p class="muted">Tady vidíš, co si asistentka pamatuje. Pamatuje si věci sama z rozhovoru, nebo je můžeš napsat do chatu jako „zapamatuj: …“. Každou položku napiš na samostatný řádek.</p>
         <textarea id="memText" style="min-height:160px"></textarea>
         <p class="muted" id="memState"></p>
+        <p class="muted" id="remList" style="white-space:pre-line"></p>
+        <label for="ntfyTopic">Téma ntfy (stejné jako v telefonu; uloží se jen do tohoto zařízení)</label>
+        <input id="ntfyTopic" type="text" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <p class="muted" id="topicState"></p>
+        <div class="actions"><button id="saveTopic" class="ghost">Uložit téma</button></div>
         <div class="actions">
           <button id="saveMem" class="ghost">Uložit paměť</button>
           <button id="clearChat" class="danger">Smazat historii chatu</button>
@@ -686,7 +691,12 @@ function renderAll() { renderProjects(); renderQuotes(); fillSettings(); clearQu
 const SYSTEM_PROMPT = `Jsi osobní asistentka a sekretářka podnikatele (řemeslo, stavby, montáže). Odpovídej česky, stručně a prakticky.
 Máš přístup k údajům v části KONTEXT (kalendář, e-maily, zakázky, nabídky). Nic za něj neodesíláš, do kalendáře nic nezapisuješ a nic nevyřizuješ. Jen navrhuješ texty a plány.
 Když navrhuješ nabídku, vypiš položky v tabulce: Položka | Množství | Jednotka | Cena/jedn. bez DPH. Když cenu neznáš, napiš to a neodhaduj ji.
-Když navrhuješ objednávku materiálu, vypiš seznam s množstvím.`;
+Když navrhuješ objednávku materiálu, vypiš seznam s množstvím.
+AUTOMATICKÉ PAMATOVÁNÍ: Sám rozhoduj, co stojí za zapamatování. Zapamatuj si trvalá fakta, která se budou hodit později: lidi a jejich firmy, kontakty, dohody, preference, cenové podmínky, termíny zakázek a podobné věci. Nepamatuj si běžné dotazy, jednorázové povídání ani hesla a čísla účtů.
+PŘIPOMÍNKY: Když uživatel chce něco připomenout v konkrétní čas (např. „připomeň mi termín na STK ve středu v 11:00“), vypočítej datum a čas podle údajů v KONTEXTU (Dnes je ...) a naplánuj připomínku.
+Pokud něco zapamatuješ nebo naplánuješ, přidej na úplný konec odpovědi, na samostatný řádek, tento řádek (jinak ho nepiš):
+ACTION: {"remember":["krátké fakt"],"remind":[{"at":"RRRR-MM-DDTHH:MM","text":"co připomenout"}]}
+Pole remember a remind mohou být prázdná. Čas je místní pražský čas. Uživateli se o ACTION nezmiňuj, jen krátce potvrď, co jsi udělal (např. „Připomenu ti to ve středu 14. 10. v 11:00.“).`;
 let chatItems = [];
 const CHAT_KEY = "asist_chat";
 const MEM_KEY = "asist_memory";
@@ -701,6 +711,8 @@ function loadChat() {
   chatItems.forEach(i => addMsg(i.role === "user" ? "user" : "bot", i.text));
 }
 function fillMemory() {
+  $("ntfyTopic").value = localStorage.getItem("asist_ntfy") || "";
+  renderReminders();
   const mem = getMemory();
   $("memText").value = mem.join("\n");
   $("memState").textContent = mem.length ? "Položek v paměti: " + mem.length : "Paměť je prázdná.";
@@ -714,7 +726,10 @@ function buildContext() {
   const qs = quotes.slice(0, 10).map(q => `- ${q.no} pro ${q.client}: ${q.title}, celkem ${money(totals(q.items).total)} vč. DPH`).join("\n") || "(žádné)";
   const mem = getMemory();
   const memText = mem.length ? mem.map(m => "- " + m).join("\n") : "(zatím nic)";
-  return `Teď je ${now.toLocaleString("cs-CZ")}.\n\nPAMĚŤ (věci, které ti uživatel řekl a máš je trvale respektovat):\n${memText}\n\nUdálosti (48 h):\n${ev}\n\nE-maily (24 h):\n${mails}\n\nZakázky:\n${proj}\n\nNabídky:\n${qs}\n\nZakázky z databáze (JSON):\n${JSON.stringify(DATA?.zakazky || []).slice(0, 20000)}\n\nFirma: ${settings.firma || "-"}, IČO ${settings.ico || "-"}, DPH ${settings.dph} %.`;
+  const dny = ["neděle","pondělí","úterý","středa","čtvrtek","pátek","sobota"];
+  const p2 = n => String(n).padStart(2, "0");
+  const iso = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`;
+  return `Teď je ${now.toLocaleString("cs-CZ")}. Dnes je ${dny[now.getDay()]} ${iso}, čas ${p2(now.getHours())}:${p2(now.getMinutes())}.\n\nPAMĚŤ (věci, které ti uživatel řekl a máš je trvale respektovat):\n${memText}\n\nUdálosti (48 h):\n${ev}\n\nE-maily (24 h):\n${mails}\n\nZakázky:\n${proj}\n\nNabídky:\n${qs}\n\nZakázky z databáze (JSON):\n${JSON.stringify(DATA?.zakazky || []).slice(0, 20000)}\n\nFirma: ${settings.firma || "-"}, IČO ${settings.ico || "-"}, DPH ${settings.dph} %.`;
 }
 
 function addMsg(role, text) {
@@ -724,6 +739,58 @@ function addMsg(role, text) {
   $("chatLog").appendChild(div);
   $("chatLog").scrollTop = $("chatLog").scrollHeight;
   return div;
+}
+
+const ACTION_RE = /\n?\s*ACTION:\s*(\{[\s\S]*\})\s*$/;
+function splitAction(answer) {
+  const m = answer.match(ACTION_RE);
+  if (!m) return { clean: answer, action: null };
+  let action = null;
+  try { action = JSON.parse(m[1]); } catch { action = null; }
+  return { clean: answer.slice(0, m.index).trim(), action };
+}
+function getReminders() { try { return JSON.parse(localStorage.getItem("asist_reminders") || "[]"); } catch { return []; } }
+function setReminders(arr) { localStorage.setItem("asist_reminders", JSON.stringify(arr.slice(-100))); }
+function renderReminders() {
+  const now = new Date();
+  const list = getReminders().filter(r => new Date(r.at) > now).sort((a, b) => new Date(a.at) - new Date(b.at));
+  $("remList").textContent = list.length
+    ? "Naplánované připomínky:\n" + list.map(r => `• ${new Date(r.at).toLocaleString("cs-CZ")} – ${r.text}`).join("\n")
+    : "Žádné naplánované připomínky.";
+}
+async function scheduleReminder(at, text) {
+  const topic = localStorage.getItem("asist_ntfy");
+  if (!topic) throw new Error("v nastavení není vyplněné téma ntfy");
+  const when = new Date(at);
+  if (isNaN(when)) throw new Error("neznámý čas " + at);
+  const secs = Math.floor(when.getTime() / 1000) - Math.floor(Date.now() / 1000);
+  if (secs < 15) throw new Error("čas je v minulosti nebo příliš blízko");
+  if (secs > 3 * 24 * 3600) throw new Error("ntfy umí naplánovat nejdál 3 dny dopředu");
+  const r = await fetch("https://ntfy.sh", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ topic, title: "Připomínka", message: text, tags: ["alarm_clock"], priority: 4,
+                           delay: String(Math.floor(when.getTime() / 1000)) }),
+  });
+  if (!r.ok) throw new Error("ntfy vrátilo HTTP " + r.status);
+  return when;
+}
+async function applyAction(action) {
+  if (!action) return "";
+  const notes = [];
+  const facts = (Array.isArray(action.remember) ? action.remember : []).map(s => String(s).trim()).filter(Boolean);
+  if (facts.length) { setMemory([...getMemory(), ...facts]); fillMemory(); }
+  for (const r of (Array.isArray(action.remind) ? action.remind : [])) {
+    try {
+      const when = await scheduleReminder(r.at, r.text);
+      setReminders([...getReminders(), { at: when.toISOString(), text: r.text }]);
+      notes.push(`⏰ Připomínka naplánována na ${when.toLocaleString("cs-CZ")}.`);
+    } catch (e) {
+      notes.push(`⚠️ Připomínku se nepodařilo naplánovat: ${e.message}.`);
+    }
+  }
+  renderReminders();
+  return notes.length ? "\n\n" + notes.join("\n") : "";
 }
 
 async function askAssistant(text) {
@@ -759,10 +826,13 @@ async function askAssistant(text) {
     });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error?.message || ("HTTP " + r.status));
-    const answer = (j.candidates?.[0]?.content?.parts || []).map(p => p.text || "").join("").trim()
+    const raw = (j.candidates?.[0]?.content?.parts || []).map(p => p.text || "").join("").trim()
       || "Nemám odpověď, zkus to přeformulovat.";
-    pushChat("model", answer);
-    pending.textContent = answer;
+    const { clean, action } = splitAction(raw);
+    const notes = await applyAction(action);
+    const final = (clean + notes).trim() || "Hotovo.";
+    pushChat("model", final);
+    pending.textContent = final;
   } catch (e) {
     const msg = "Chyba: " + e.message;
     pushChat("model", msg, true);
@@ -776,6 +846,11 @@ $("saveMem").addEventListener("click", () => {
   const lines = $("memText").value.split("\n").map(s => s.trim()).filter(Boolean);
   setMemory(lines);
   $("memState").textContent = "Paměť uložena (" + lines.length + " položek) ✓";
+});
+$("saveTopic").addEventListener("click", () => {
+  const t = $("ntfyTopic").value.trim();
+  if (t) localStorage.setItem("asist_ntfy", t); else localStorage.removeItem("asist_ntfy");
+  $("topicState").textContent = t ? "Téma uloženo ✓" : "Téma smazáno.";
 });
 $("clearChat").addEventListener("click", () => {
   if (!confirm("Smazat historii chatu? Paměť zůstane.")) return;
