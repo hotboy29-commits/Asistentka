@@ -232,6 +232,16 @@
           <button id="forgetKey" class="danger">Smazat klíč</button>
         </div>
       </div>
+      <div class="card">
+        <h2>Paměť asistentky</h2>
+        <p class="muted">Tady vidíš, co si asistentka pamatuje. Každou položku napiš na samostatný řádek. Nová položka: napiš do chatu „zapamatuj: …“.</p>
+        <textarea id="memText" style="min-height:160px"></textarea>
+        <p class="muted" id="memState"></p>
+        <div class="actions">
+          <button id="saveMem" class="ghost">Uložit paměť</button>
+          <button id="clearChat" class="danger">Smazat historii chatu</button>
+        </div>
+      </div>
     </section>
   </main>
 
@@ -677,7 +687,24 @@ const SYSTEM_PROMPT = `Jsi osobní asistentka a sekretářka podnikatele (řemes
 Máš přístup k údajům v části KONTEXT (kalendář, e-maily, zakázky, nabídky). Nic za něj neodesíláš, do kalendáře nic nezapisuješ a nic nevyřizuješ. Jen navrhuješ texty a plány.
 Když navrhuješ nabídku, vypiš položky v tabulce: Položka | Množství | Jednotka | Cena/jedn. bez DPH. Když cenu neznáš, napiš to a neodhaduj ji.
 Když navrhuješ objednávku materiálu, vypiš seznam s množstvím.`;
-let chatHistory = [];
+let chatItems = [];
+const CHAT_KEY = "asist_chat";
+const MEM_KEY = "asist_memory";
+const MEM_CMD = /^\s*(zapamatuj(?:\s+si)?|pamatuj(?:\s+si)?)\s*[:,-]?\s+(.+)$/is;
+
+function getMemory() { try { return JSON.parse(localStorage.getItem(MEM_KEY) || "[]"); } catch { return []; } }
+function setMemory(arr) { localStorage.setItem(MEM_KEY, JSON.stringify(arr.slice(-200))); }
+function saveChat() { localStorage.setItem(CHAT_KEY, JSON.stringify(chatItems.slice(-80))); }
+function pushChat(role, text, err = false) { chatItems.push({ role, text, err }); saveChat(); }
+function loadChat() {
+  try { chatItems = JSON.parse(localStorage.getItem(CHAT_KEY) || "[]"); } catch { chatItems = []; }
+  chatItems.forEach(i => addMsg(i.role === "user" ? "user" : "bot", i.text));
+}
+function fillMemory() {
+  const mem = getMemory();
+  $("memText").value = mem.join("\n");
+  $("memState").textContent = mem.length ? "Položek v paměti: " + mem.length : "Paměť je prázdná.";
+}
 
 function buildContext() {
   const now = new Date();
@@ -685,7 +712,9 @@ function buildContext() {
   const mails = (DATA?.emails || []).slice(0, 20).map(m => `- [${CAT[m.category] || m.category}] ${m.from}: ${m.subject}${m.summary ? " – " + m.summary : ""}`).join("\n") || "(žádné)";
   const proj = projects.map(p => `- ${p.name} (klient: ${p.client || "-"}, termín: ${p.deadline || "-"}); materiál: ${p.items.map(i => `${i.name} ${i.qty} ${i.unit}${i.ordered ? " [objednáno]" : ""}`).join(", ") || "žádný"}`).join("\n") || "(žádné)";
   const qs = quotes.slice(0, 10).map(q => `- ${q.no} pro ${q.client}: ${q.title}, celkem ${money(totals(q.items).total)} vč. DPH`).join("\n") || "(žádné)";
-  return `Teď je ${now.toLocaleString("cs-CZ")}.\n\nUdálosti (48 h):\n${ev}\n\nE-maily (24 h):\n${mails}\n\nZakázky:\n${proj}\n\nNabídky:\n${qs}\n\nZakázky z databáze (JSON):\n${JSON.stringify(DATA?.zakazky || []).slice(0, 8000)}\n\nFirma: ${settings.firma || "-"}, IČO ${settings.ico || "-"}, DPH ${settings.dph} %.`;
+  const mem = getMemory();
+  const memText = mem.length ? mem.map(m => "- " + m).join("\n") : "(zatím nic)";
+  return `Teď je ${now.toLocaleString("cs-CZ")}.\n\nPAMĚŤ (věci, které ti uživatel řekl a máš je trvale respektovat):\n${memText}\n\nUdálosti (48 h):\n${ev}\n\nE-maily (24 h):\n${mails}\n\nZakázky:\n${proj}\n\nNabídky:\n${qs}\n\nZakázky z databáze (JSON):\n${JSON.stringify(DATA?.zakazky || []).slice(0, 20000)}\n\nFirma: ${settings.firma || "-"}, IČO ${settings.ico || "-"}, DPH ${settings.dph} %.`;
 }
 
 function addMsg(role, text) {
@@ -698,20 +727,33 @@ function addMsg(role, text) {
 }
 
 async function askAssistant(text) {
+  const mem = text.match(MEM_CMD);
+  if (mem) {
+    const fact = mem[2].trim();
+    setMemory([...getMemory(), fact]);
+    fillMemory();
+    addMsg("user", text); pushChat("user", text);
+    const reply = "Zapamatováno: " + fact;
+    addMsg("bot", reply); pushChat("model", reply);
+    return;
+  }
   const key = localStorage.getItem("asist_gemini");
   if (!key) { addMsg("bot", "Nejdřív ulož klíč Gemini v nastavení dole."); return; }
   addMsg("user", text);
-  chatHistory.push({ role: "user", parts: [{ text }] });
+  pushChat("user", text);
   const pending = addMsg("bot", "Přemýšlím…");
   $("chatSend").disabled = true;
   try {
     const model = localStorage.getItem("asist_model") || "gemini-3.8-flash";
+    const contents = chatItems.filter(i => !i.err).slice(-30)
+      .map(i => ({ role: i.role === "user" ? "user" : "model", parts: [{ text: i.text }] }));
+    while (contents.length && contents[0].role !== "user") contents.shift();
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: SYSTEM_PROMPT + "\n\nKONTEXT:\n" + buildContext() }] },
-        contents: chatHistory.slice(-12),
+        contents,
         generationConfig: { temperature: 0.4 },
       }),
     });
@@ -719,15 +761,26 @@ async function askAssistant(text) {
     if (!r.ok) throw new Error(j.error?.message || ("HTTP " + r.status));
     const answer = (j.candidates?.[0]?.content?.parts || []).map(p => p.text || "").join("").trim()
       || "Nemám odpověď, zkus to přeformulovat.";
-    chatHistory.push({ role: "model", parts: [{ text: answer }] });
+    pushChat("model", answer);
     pending.textContent = answer;
   } catch (e) {
-    chatHistory.pop();
-    pending.textContent = "Chyba: " + e.message;
+    const msg = "Chyba: " + e.message;
+    pushChat("model", msg, true);
+    pending.textContent = msg;
   } finally {
     $("chatSend").disabled = false;
   }
 }
+
+$("saveMem").addEventListener("click", () => {
+  const lines = $("memText").value.split("\n").map(s => s.trim()).filter(Boolean);
+  setMemory(lines);
+  $("memState").textContent = "Paměť uložena (" + lines.length + " položek) ✓";
+});
+$("clearChat").addEventListener("click", () => {
+  if (!confirm("Smazat historii chatu? Paměť zůstane.")) return;
+  chatItems = []; saveChat(); $("chatLog").innerHTML = "";
+});
 
 $("chatForm").addEventListener("submit", (e) => {
   e.preventDefault();
@@ -758,6 +811,7 @@ $("gModel").value = localStorage.getItem("asist_model") || "gemini-3.8-flash";
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js");
   const saved = localStorage.getItem("asist_pass");
   renderAll();
+  loadChat(); fillMemory();
   if (saved) { await unlock(saved); }
   else show("lock");
 })();
